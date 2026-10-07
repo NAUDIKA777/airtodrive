@@ -1,0 +1,40 @@
+{
+  "summary": "USB DirectFlow full-stack smoke+flow tests passed. Backend: 8/8 pytest cases green (root, status create+persist, /api/samples structure+content, /api/sample-file/transfer-report.txt plain text, /api/sample-file/telemetry.json JSON 120 samples, 404 for unknown sample, CORS). Frontend: Connect simulated USB drive -> drive-status-card with usage bar, source-toggle switches INTERNET<->PHONE MEDIA (pick-media and pick-doc rendered), URL input populates selected-item, sample chips (video/audio/image/text/json) populate selected-item, compress-switch toggles, START STREAM runs the pipeline — transfer-console shows PHASE/metrics (WRITTEN/TOTAL/SPEED/GZIP tag), transfer-progress fills to 100%, success toast appears, drive usage/file count updates. CANCEL button appears while running. Browse tab lists streamed files with correct size/kind, GZIP badge on compressed docs (transfer-report.txt 1.2 KB -> 3.1 KB), delete button removes a row, pull-to-refresh available. Preview: image shows image-view, audio shows timeline-slider + play-toggle with real duration 6:12, doc preview shows doc-text decompressed content with gzip banner, preview-back returns. Video preview renders header + timeline-slider + play-toggle (scrub drag works) but the video frame itself does NOT render in web preview — this is expected because expo-video's web viewport is limited (and simulated drive). Deprecated packages: NONE found in package.json. Minor runtime warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' logged from a dependency.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "VideoView (expo-video)", "issue": "testID='video-view' does not propagate to the DOM in web preview, so playwright cannot assert on it; the surrounding scrubber/play-toggle render but the video frame area is black in web (expected limitation of expo-video on web with simulated drive). Reference: /app/frontend/app/preview/[id].tsx:146"},
+      {"component": "pointerEvents prop (library warning)", "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' is logged repeatedly from a dependency. Not blocking but should be tracked. Likely originates in react-native-reanimated / segmented control. Reference: console warnings during /app/frontend/app/(tabs)/index.tsx render"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_usb_directflow_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Wrap VideoView in a View that also carries testID='video-view' so web preview tests can verify its presence, e.g. <View testID=\"video-view\"><VideoView ...\"/></View>, or add a conditional web-only poster. Current behaviour is acceptable because video playback is a native-only feature per the problem statement.",
+    "(Optional) Investigate the recurring 'props.pointerEvents deprecated' warning (likely from an upstream dependency) — bump the offending lib or suppress."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py uses @app.on_event('shutdown') which is deprecated in FastAPI; use lifespan instead (non-blocking).",
+    "/api/sample-file/transfer-report.txt returns ~3KB of generated text; /api/sample-file/telemetry.json returns 120 datapoints — both compress very well, which matches the UX for the GZIP badge demo.",
+    "No MongoDB _id leakage detected in /api/status response (serialised via Pydantic StatusCheck)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_usb_directflow_api.py (new)",
+    "/app/test_reports/pytest/pytest_results.xml (new)",
+    "/app/test_reports/iteration_1.json (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100% (video playback frame not expected on web)"},
+  "seed_data_creation": "One StatusCheck row created with client_name='TEST_usb_directflow_backend_tests' during pytest run; harmless.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend base URL used for curl/pytest: $EXPO_PUBLIC_BACKEND_URL. All endpoints under /api/*. Simulated USB drive is attached instantly by tapping [data-testid=connect-button]; subsequent transfers only need a sample chip + [data-testid=start-button]. Compressed-doc preview is best observed via sample-transfer-report.txt or sample-telemetry.json. The PHONE MEDIA pickers are native-only (expo-image-picker / expo-document-picker) and only the pick-media / pick-doc buttons should be asserted on web.",
+  "rca_of_issue": "N/A — no bugs reproduced. The one web-preview oddity (video-view testID not visible in DOM, blank video area) is a known limitation of expo-video on web combined with the simulated drive URI; the surrounding scrubber UI (timeline-slider, play-toggle) works correctly."
+}

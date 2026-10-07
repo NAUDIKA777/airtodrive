@@ -1,0 +1,145 @@
+{
+  "app_name": "USB DirectFlow",
+  "personality": "7 Dark-First Utility",
+  "personality_one_liner": "A high-contrast, tactical command center optimized for precise data streaming and terminal-like file management.",
+  "color": {
+    "surface": "#0E0E0F",
+    "onSurface": "#FFFFFF",
+    "surfaceSecondary": "#1C1C1E",
+    "onSurfaceSecondary": "#EBEBF5",
+    "surfaceTertiary": "#2C2C2E",
+    "onSurfaceTertiary": "#D1D1D6",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#000000",
+    "brand": "#00E5FF",
+    "onBrand": "#000000",
+    "brandPrimary": "#00E5FF",
+    "onBrandPrimary": "#000000",
+    "brandSecondary": "#10B981",
+    "onBrandSecondary": "#000000",
+    "brandTertiary": "rgba(0, 229, 255, 0.12)",
+    "onBrandTertiary": "#00E5FF",
+    "success": "#10B981",
+    "onSuccess": "#000000",
+    "warning": "#F59E0B",
+    "onWarning": "#000000",
+    "error": "#FF453A",
+    "onError": "#FFFFFF",
+    "info": "#0A84FF",
+    "onInfo": "#FFFFFF",
+    "border": "#2C2C2E",
+    "borderStrong": "#3A3A3C",
+    "divider": "#2C2C2E",
+    "muted": "#8E8E93"
+  },
+  "typography": {
+    "displayFontFamily": "JetBrains Mono",
+    "textFontFamily": "IBM Plex Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use tight, metric-driven spacing (sm/md). Ensure dense data is separated by hairlines (borders/dividers) rather than excess whitespace.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [],
+    "dont's": [
+      "Skip glass completely for this developer utility app.",
+      "Rely on solid surfaceSecondary and thin borderStrong dividers for elevation."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Transfer Dashboard",
+      "purpose": "Command center for configuring the data source and monitoring live streaming to the USB.",
+      "states": {
+        "loading": "Skeleton loaders for URL inputs; disabling source toggles until ready.",
+        "empty": "No source selected; 'Connect USB Drive' prominent prompt.",
+        "error": "'USB Drive Not Found' or 'Stream Interrupted' banner in red (#FF453A)."
+      },
+      "layout": "Use a segmented control for the source toggle (Internet vs Local). Below, place the URL input or media picker. Central to the screen is a 'Terminal Console' (surfaceSecondary card, JetBrains Mono font) showing live streaming metrics: bytes/s, total downloaded, compression status. Keep a sticky primary 'Start Stream' CTA at the bottom."
+    },
+    {
+      "name": "USB File Browser",
+      "purpose": "A dense file explorer for navigating and managing files currently on the external USB.",
+      "states": {
+        "loading": "Spinner in center while SAF indexes the USB directory.",
+        "empty": "Empty state illustration (USB flash drive) with 'USB Drive is Empty'.",
+        "error": "Error reading USB directory, retry button."
+      },
+      "layout": "Header shows storage stats (used vs free) using a progress bar. List rows should be dense, featuring a file type icon, file name, and file size metadata. Tapping a file row routes to the Media Preview screen."
+    },
+    {
+      "name": "Media Preview",
+      "purpose": "On-the-fly preview and playback screen for media streaming directly from USB.",
+      "states": {
+        "loading": "Centered circular progress representing buffer/decompression initialization.",
+        "empty": "Unsupported media format illustration.",
+        "error": "Playback error banner with retry option."
+      },
+      "layout": "Large media viewport filling the upper 2/3 of the screen. The bottom 1/3 contains playback controls and a high-contrast timeline scrubber slider for precise timestamp navigation. Background remains pure surface (#0E0E0F) to highlight the media."
+    }
+  ],
+  "images": {
+    "hero_abstract_stream": {
+      "url": "https://images.unsplash.com/photo-1557264337-e8a93017fe92?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhdGElMjBzdHJlYW0lMjBkYXJrfGVufDB8fHx8MTc5MTQxMzc1NHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract blue and purple data stream swirling against a black background"
+    },
+    "empty_usb_drive": {
+      "url": "https://images.unsplash.com/photo-1587145820098-23e484e69816?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwxfHx1c2IlMjBmbGFzaCUyMGRyaXZlfGVufDB8fHx8MTc5MTQxMzc1NHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Black USB flash drive"
+    }
+  },
+  "haptics": {
+    "events": {
+      "toggle_source": "light",
+      "connect_usb": "medium",
+      "start_stream": "heavy",
+      "scrubber_tick": "selection",
+      "file_tap": "light"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the Dark-First Utility personality: NO glassmorphism, use solid surfaceSecondary and thin border dividers.",
+    "Implement the live transfer console with JetBrains Mono for a terminal-like aesthetic. Numbers should align properly for metrics.",
+    "The source toggle should be a segmented control that instantly switches the input UI below it.",
+    "Ensure touch targets for file browser rows and media scrubber are at least 44x44pt.",
+    "Implement a gradient-to-dark scrim (top-to-bottom) if the abstract hero image is used behind any status text.",
+    "Do NOT use pure black-on-white. Text on surface uses #FFFFFF. Text on brand uses #000000.",
+    "Use Phosphor icons consistently in outlined or filled states (avoid mixing)."
+  ]
+}
