@@ -30,7 +30,16 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Air to Drive",
+      "shortName": "AirToDrive",
+      "lang": "en",
+      "themeColor": "#00E5FF",
+      "backgroundColor": "#0E0E0F",
+      "display": "standalone",
+      "startUrl": "/",
+      "orientation": "any",
+      "description": "Download massive files directly to external USB drives — zero phone storage required."
     },
     "plugins": [
       "expo-router",

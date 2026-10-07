@@ -1,0 +1,46 @@
+{
+  "summary": "Air to Drive landing page + Stripe-unconfigured checkout iteration tested end-to-end. Backend: 10/10 pytest cases green — /api/checkout/config returns {enabled:false, product:'Lifetime Access', amount_display:'$19.95', currency:'USD'}; /api/checkout/session returns 503 with 'Stripe is not configured yet. Add STRIPE_SECRET_KEY to backend/.env.'; /api/checkout/status rejects non cs_-prefixed id with 400 and returns 503 for cs_test_abc; /api/stripe/webhook returns 503 without secret; existing endpoints (/api/, /api/samples, /api/sample-file/transfer-report.txt, /api/sample-file/telemetry.json 120 samples, POST+GET /api/status with persistence) still fully functional. Frontend web homepage renders the PWA landing page: nav (logo + Install App + Get Lifetime), headline 'Massive Files Directly to External Drives, Zero Phone Storage Required', subheadline with 'twelve-hour creator videos' copy, three feature callouts (feature-video / feature-pro / feature-astro) with correct Video Creators / Mobile Professionals / Amateur Astronomers copy, pricing card (pricing-card) showing $19.95 one-time + all 5 bullets + buy-button + helper line 'Checkout activates once Stripe keys are added'. Install prompt (install-prompt) auto-opens ~0.9s after load with install-accept + install-dismiss; clicking install-dismiss hides it and the dismissal persists across a hard reload (AsyncStorage flag). Clicking buy-button triggers POST /api/checkout/session which returns 503; UI stays on '/' (no crash, no redirect) and surfaces an info toast 'Checkout isn't live yet — add your Stripe key to enable purchases.' /success without session_id shows 'Something went wrong — Missing checkout session.' and the success-home button returns to '/' and the landing page renders. /success?session_id=cs_test_bad shows 'Unable to verify payment.' error state (backend 503). No React Native red screen, no deprecated expo packages. Only pre-existing console warnings observed: 'shadow* style props are deprecated' and 'props.pointerEvents is deprecated' (both from dependencies, unchanged from iteration_1).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props (library warning)", "issue": "Console warning '\"shadow*\" style props are deprecated. Use \"boxShadow\"' logged on web — originates from React Native Web / libraries. Not blocking. Reference: /app/frontend/src/landing/LandingPage.tsx:280 (btnPrimary uses shadowColor/shadowOpacity/shadowRadius/shadowOffset which map to deprecated web shadow props)."},
+      {"component": "pointerEvents prop (library warning)", "issue": "Pre-existing console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' still logged (from upstream dependency, unchanged from iteration_1)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_landing_checkout.py",
+    "/app/backend/tests/test_usb_directflow_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate shadowColor/shadowOpacity/shadowRadius/shadowOffset in LandingPage.tsx (btnPrimary, pricingCard, installCard) to the new 'boxShadow' style prop on web to silence the deprecation warning — RN 0.76+ supports a cross-platform boxShadow shorthand.",
+    "(Optional) After Stripe keys are added (STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET), re-run tests expecting /api/checkout/session → 200 with checkout_url+session_id, /api/checkout/status with real cs_ id → paid/pending data, and /api/stripe/webhook signature verification.",
+    "No code fix required for this iteration — Stripe-unconfigured UX is working exactly as specified."
+  ],
+  "critical_code_review_comments": [
+    "server.py cleanly gates Stripe with _stripe_key()/_stripe_ready(); 503 responses are correct and detail messages are user-friendly.",
+    "Checkout session row is upserted into db.orders with 'pending' status before Stripe call succeeds — fine; _record_session later flips order_status to 'paid'.",
+    "/api/checkout/status correctly validates session_id prefix before calling Stripe (prevents wasted API calls on garbage input).",
+    "LandingPage.tsx uses testID on every interactive element (nav-install, nav-buy, hero-buy, hero-install, buy-button, install-prompt, install-accept, install-dismiss, pricing-card, feature-*) — excellent testability.",
+    "usePwaInstall.ts persists dismissal via storage util — verified to survive reload.",
+    "useCheckout.ts correctly treats 503 as a soft-fail path (shows toast) instead of throwing — no console errors besides the expected 503 network log.",
+    "server.py still uses deprecated @app.on_event('shutdown') — carried over from iteration_1, non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_landing_checkout.py (new)",
+    "/app/test_reports/pytest/pytest_results.xml (overwritten)",
+    "/app/test_reports/iteration_2.json (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (all landing + success route flows verified)"},
+  "seed_data_creation": "One StatusCheck row created with client_name='TEST_landing_checkout_suite' during pytest run; harmless. No Stripe orders created (unconfigured).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "When Stripe keys are added later: set STRIPE_SECRET_KEY (sk_...) and STRIPE_PRICE_ID (optional, price_...) in backend/.env, restart backend, then /api/checkout/config should return enabled:true, /api/checkout/session should return 200 with checkout_url+session_id, and the frontend buy-button should window.location.assign() to Stripe. Add STRIPE_WEBHOOK_SECRET for /api/stripe/webhook to accept signed events. Base URL for tests: EXPO_PUBLIC_BACKEND_URL (loaded from /app/frontend/.env in test_landing_checkout.py).",
+  "rca_of_issue": "N/A — all specified behavior reproduced successfully. The 503 responses and info-toast UX are intentional per the problem statement until Stripe keys are supplied."
+}

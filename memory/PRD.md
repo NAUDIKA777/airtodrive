@@ -56,6 +56,28 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
 - About screen explaining pipeline + native-build caveat.
 - Backend sample sources + sample files. Full backend + frontend testing passed (iteration_1).
 
+## Implemented — PWA Landing Page + Stripe (2026-06)
+- **Web homepage is now the "Air to Drive" marketing PWA landing page** (`app/index.tsx`:
+  web → `LandingPage`, native → the USB app). Dark techy theme, glowing cyan/blue emblem
+  (`BrandEmblem`: satellite → phone → USB data-stream).
+- Sections: sticky nav (Install + Get Lifetime), hero (exact headline + subheadline + CTAs +
+  trust row), 3 feature callouts (Video Creators / Mobile Professionals / Amateur Astronomers),
+  Lifetime Access pricing card ($19.95 one-time, 5 bullets), footer.
+- **Automatic PWA install prompt** on arrival (`usePwaInstall` captures `beforeinstallprompt`);
+  Install / Maybe-later with persisted dismissal. Web manifest fields added to `app.json` (name,
+  standalone, theme/background colors).
+- **Stripe one-time Checkout** ($19.95) per integration playbook: `POST /api/checkout/session`
+  (server-side fixed price_data, no client amount), `GET /api/checkout/status` (poll + verify),
+  `POST /api/stripe/webhook`, `GET /api/checkout/config`. Orders stored in Mongo. `app/success.tsx`
+  verifies payment on return. Stripe keys NOT yet provided → endpoints return 503 and the buy
+  button shows an info toast (graceful). Tested: iteration_2 (10/10 backend + all frontend flows).
+
+## Pending config (needs user)
+- Add `STRIPE_SECRET_KEY` (and optionally `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`) to
+  `backend/.env` to activate live checkout.
+- PWA install + live Stripe only fully work once deployed to the custom domain (HTTPS).
+- Optional: real "Air to Drive" logo image (Drive link was not public) to replace `BrandEmblem`.
+
 ## Backlog
 - P1: Multi-file / batch queue of transfers.
 - P1: Resume / pause of in-flight downloads (DownloadTask pause-state).
