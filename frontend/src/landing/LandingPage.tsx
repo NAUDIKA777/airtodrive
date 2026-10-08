@@ -45,6 +45,21 @@ const PRICE_BULLETS = [
   "Priority email support",
 ];
 
+const FAQS: { q: string; a: string }[] = [
+  {
+    q: "Which USB drives are compatible?",
+    a: "Any USB-OTG flash drive, USB-C stick or external SSD/HDD your Android device can mount. Air to Drive writes straight to it through Android's Storage Access Framework — format it as FAT32, exFAT or ext4 and you're ready to stream.",
+  },
+  {
+    q: "Which phones are supported?",
+    a: "Android phones and tablets with USB-OTG support (the vast majority made in the last several years) running Android 10 or newer. If your drive and phone use different ports, a simple USB-OTG adapter bridges the two.",
+  },
+  {
+    q: "What's your refund policy?",
+    a: "Lifetime Access is a one-time purchase. If it doesn't work smoothly with your device, email priority support within 14 days of buying and we'll refund you in full — no hassle.",
+  },
+];
+
 const REGULAR_PRICE = 19.95;
 const SALE_PRICE = 14.95;
 const PROMO_CODES: Record<string, number> = { LAUNCH25: 25, EARLY50: 50, FOUNDER: 30 };
@@ -281,6 +296,17 @@ export function LandingPage() {
           </View>
         </View>
 
+        {/* FAQ */}
+        <View style={[styles.sectionInner, { maxWidth: MAX_W, alignItems: "center" }]}>
+          <Text style={styles.kicker}>QUESTIONS</Text>
+          <Text style={styles.h2}>Frequently asked</Text>
+          <View style={styles.faqMax}>
+            {FAQS.map((f, i) => (
+              <FaqItem key={f.q} index={i} q={f.q} a={f.a} />
+            ))}
+          </View>
+        </View>
+
         {/* FOOTER */}
         <View style={[styles.sectionInner, { maxWidth: MAX_W }]}>
           <View style={styles.footer}>
@@ -332,6 +358,25 @@ function Trust({ icon, label }: { icon: IconName; label: string }) {
   );
 }
 
+function FaqItem({ index, q, a }: { index: number; q: string; a: string }) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.faqCard} testID={`faq-item-${index}`}>
+      <Pressable testID={`faq-toggle-${index}`} onPress={() => setOpen((v) => !v)} style={styles.faqQRow}>
+        <Text style={styles.faqQText}>{q}</Text>
+        <Icon name={open ? "chevron-up" : "chevron-down"} size={22} color={colors.brandPrimary} />
+      </Pressable>
+      {open ? (
+        <View style={styles.faqA}>
+          <Text style={styles.faqAText}>{a}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const useStyles = makeStyles((colors) => ({
   root: { flex: 1, backgroundColor: colors.surface },
 
@@ -340,6 +385,12 @@ const useStyles = makeStyles((colors) => ({
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   logoMark: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(0,229,255,0.4)", overflow: "hidden" },
   logoMarkImg: { width: 28, height: 28 },
+  faqMax: { width: "100%", maxWidth: 760, alignSelf: "center" },
+  faqCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, overflow: "hidden", marginBottom: spacing.sm },
+  faqQRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg, minHeight: 56 },
+  faqQText: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: "700" },
+  faqA: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
+  faqAText: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   wordmark: { color: colors.onSurface, fontSize: 15, fontWeight: "800", fontFamily: mono, letterSpacing: 1.5 },
   navBtns: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
 

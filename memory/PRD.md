@@ -105,6 +105,11 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
   install-prompt card (full logo).
 - Pricing: standing launch sale — regular **$19.95** struck through, sale price **$14.95** + SALE
   tag. Promo codes still apply and are capped to never exceed the $14.95 sale.
+- FAQ: landing now has a 3-item FAQ accordion (USB compatibility, supported phones, refunds).
+  Countdown timer and testimonials intentionally skipped per user.
+- Hub card: `/app/hub-card/` holds copy-paste assets (HTML + JSX + logo/emblem images) for the
+  external VectorCraft Digital hub (a separate Emergent project this app can't edit directly) —
+  card links to https://airtodrive.com and opens in a new tab.
 
 - Add `STRIPE_SECRET_KEY` (and optionally `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`) to
   `backend/.env` to activate live checkout.
