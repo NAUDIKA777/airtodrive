@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /success
+Disallow: /preview
+
+Sitemap: https://airtodrive.com/sitemap.xml

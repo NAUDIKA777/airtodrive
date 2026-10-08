@@ -98,6 +98,14 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
 - Tested: iteration_5 (promo + OG + regression) green after a floating-point rounding fix.
 
 ## Pending config (needs user)
+<!-- launch SEO + branding + sale -->
+- SEO: `public/robots.txt` (+ sitemap ref, disallows /success & /preview) and `public/sitemap.xml`
+  (homepage, airtodrive.com) served at web root. Domain meta finalized with canonical to airtodrive.com.
+- Branding: logo now used in the nav bar + footer (square emblem crop `logo-mark.png`) and the
+  install-prompt card (full logo).
+- Pricing: standing launch sale — regular **$19.95** struck through, sale price **$14.95** + SALE
+  tag. Promo codes still apply and are capped to never exceed the $14.95 sale.
+
 - Add `STRIPE_SECRET_KEY` (and optionally `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`) to
   `backend/.env` to activate live checkout.
 - PWA install + live Stripe only fully work once deployed to the custom domain (HTTPS).

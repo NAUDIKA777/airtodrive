@@ -45,7 +45,8 @@ const PRICE_BULLETS = [
   "Priority email support",
 ];
 
-const BASE_PRICE = 19.95;
+const REGULAR_PRICE = 19.95;
+const SALE_PRICE = 14.95;
 const PROMO_CODES: Record<string, number> = { LAUNCH25: 25, EARLY50: 50, FOUNDER: 30 };
 
 export function LandingPage() {
@@ -63,7 +64,8 @@ export function LandingPage() {
   const [showInstall, setShowInstall] = useState(false);
   const [promo, setPromo] = useState("");
   const [applied, setApplied] = useState<{ code: string; pct: number } | null>(null);
-  const discounted = (Math.round(BASE_PRICE * 100 * (1 - (applied?.pct ?? 0) / 100)) / 100).toFixed(2);
+  const promoPrice = Math.round(REGULAR_PRICE * 100 * (1 - (applied?.pct ?? 0) / 100)) / 100;
+  const currentPrice = (applied ? Math.min(promoPrice, SALE_PRICE) : SALE_PRICE).toFixed(2);
 
   useEffect(() => {
     if (Platform.OS !== "web" || installed) return;
@@ -136,7 +138,7 @@ export function LandingPage() {
           <View style={[styles.navInner, { maxWidth: MAX_W }]}>
             <View style={styles.brandRow}>
               <View style={styles.logoMark}>
-                <Icon name="usb-flash-drive" size={18} color={colors.brandPrimary} />
+                <Image source={require("@/assets/images/logo-mark.png")} style={styles.logoMarkImg} contentFit="contain" />
               </View>
               <Text style={styles.wordmark}>AIR TO DRIVE</Text>
             </View>
@@ -216,11 +218,12 @@ export function LandingPage() {
               <Text style={styles.planBadgeText}>LIFETIME ACCESS</Text>
             </View>
             <View style={styles.priceRow}>
-              {applied ? (
-                <Text style={styles.priceStrike}>{cfg.data?.amount_display ?? "$19.95"}</Text>
-              ) : null}
-              <Text style={styles.priceBig}>{applied ? `$${discounted}` : cfg.data?.amount_display ?? "$19.95"}</Text>
+              <Text style={styles.priceStrike}>$19.95</Text>
+              <Text style={styles.priceBig}>${currentPrice}</Text>
               <Text style={styles.priceUnit}>one-time</Text>
+              <View style={styles.saleTag}>
+                <Text style={styles.saleTagText}>SALE</Text>
+              </View>
             </View>
             <View style={styles.bullets}>
               {PRICE_BULLETS.map((b) => (
@@ -283,7 +286,7 @@ export function LandingPage() {
           <View style={styles.footer}>
             <View style={styles.brandRow}>
               <View style={styles.logoMark}>
-                <Icon name="usb-flash-drive" size={16} color={colors.brandPrimary} />
+                <Image source={require("@/assets/images/logo-mark.png")} style={styles.logoMarkImg} contentFit="contain" />
               </View>
               <Text style={styles.wordmark}>AIR TO DRIVE</Text>
             </View>
@@ -298,9 +301,7 @@ export function LandingPage() {
         <View style={styles.overlay} testID="install-prompt">
           <Pressable style={styles.overlayBg} onPress={dismissInstall} />
           <View style={styles.installCard}>
-            <View style={styles.installIcon}>
-              <Icon name="download-circle-outline" size={34} color={colors.brandPrimary} />
-            </View>
+            <Image source={require("@/assets/images/air-to-drive-logo.jpg")} style={styles.installLogo} contentFit="contain" />
             <Text style={styles.installTitle}>Install Air to Drive</Text>
             <Text style={styles.installBody}>
               Add the app to your device for one-tap access and offline use. Installs in seconds — no
@@ -337,7 +338,8 @@ const useStyles = makeStyles((colors) => ({
   nav: { backgroundColor: "rgba(14,14,15,0.9)", borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center" },
   navInner: { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  logoMark: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(0,229,255,0.4)" },
+  logoMark: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(0,229,255,0.4)", overflow: "hidden" },
+  logoMarkImg: { width: 28, height: 28 },
   wordmark: { color: colors.onSurface, fontSize: 15, fontWeight: "800", fontFamily: mono, letterSpacing: 1.5 },
   navBtns: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
 
@@ -385,6 +387,8 @@ const useStyles = makeStyles((colors) => ({
   priceBig: { color: colors.onSurface, fontSize: 48, fontWeight: "900", fontFamily: mono, letterSpacing: -1 },
   priceUnit: { color: colors.muted, fontSize: 15, fontFamily: mono },
   priceStrike: { color: colors.muted, fontSize: 20, fontFamily: mono, textDecorationLine: "line-through" },
+  saleTag: { backgroundColor: colors.error, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2, alignSelf: "center" },
+  saleTagText: { color: colors.onError, fontSize: 10, fontFamily: mono, fontWeight: "700", letterSpacing: 1 },
   promoWrap: { marginTop: spacing.lg },
   promoRow: { flexDirection: "row", gap: spacing.sm },
   promoInput: { flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: spacing.md, fontSize: 14, fontFamily: mono, letterSpacing: 1 },
@@ -406,7 +410,7 @@ const useStyles = makeStyles((colors) => ({
   overlay: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", padding: spacing.lg },
   overlayBg: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.75)" },
   installCard: { width: "100%", maxWidth: 400, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(0,229,255,0.35)", padding: spacing.xl, alignItems: "center", gap: spacing.sm, boxShadow: `0px 0px 40px ${colors.brandPrimary}4D` },
-  installIcon: { width: 64, height: 64, borderRadius: radius.lg, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(0,229,255,0.3)" },
+  installLogo: { width: 92, height: 122, borderRadius: 16, marginBottom: spacing.xs },
   installTitle: { color: colors.onSurface, fontSize: 20, fontWeight: "800", marginTop: spacing.xs },
   installBody: { color: colors.muted, fontSize: 14, lineHeight: 20, textAlign: "center" },
   laterBtn: { paddingVertical: spacing.sm, paddingHorizontal: spacing.lg },
