@@ -24,12 +24,13 @@ export function useCheckoutConfig() {
 export function useBuy(onError: (msg: string) => void) {
   const [busy, setBusy] = useState(false);
 
-  const buy = useCallback(async () => {
+  const buy = useCallback(async (promoCode?: string) => {
     setBusy(true);
     try {
       const r = await fetch(`${API}/api/checkout/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promo_code: promoCode ?? null }),
       });
       if (r.status === 503) {
         onError("Checkout isn't live yet — add your Stripe key to enable purchases.");

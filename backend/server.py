@@ -149,12 +149,25 @@ async def sample_telemetry():
 
 
 # ---------------------------------------------------------------------------
-# Stripe one-time payment ("Air to Drive — Lifetime Access", $19.95 USD).
-# The amount/price is fixed server-side; the client never sends a price.
+# Stripe one-time payment ("Air to Drive — Lifetime Access").
+# Price is computed server-side; the client only sends an optional promo code.
 # ---------------------------------------------------------------------------
 PRODUCT_NAME = "Air to Drive — Lifetime Access"
-PRICE_CENTS = 1995
+REGULAR_CENTS = 1995
+SALE_CENTS = 1495  # standing launch sale
 PRICE_CURRENCY = "usd"
+PROMO_CODES = {"LAUNCH25": 25, "EARLY50": 50, "FOUNDER": 30}
+
+
+def compute_amount(promo_code):
+    """Return (cents, applied_code). A promo discounts off the regular price but
+    never costs more than the standing sale price."""
+    code = (promo_code or "").strip().upper()
+    pct = PROMO_CODES.get(code)
+    if pct:
+        promo_price = int(REGULAR_CENTS * (1 - pct / 100) + 0.5)  # round half up
+        return min(promo_price, SALE_CENTS), code
+    return SALE_CENTS, None
 
 
 def _stripe_key() -> str:
@@ -198,7 +211,7 @@ async def checkout_config():
     return {
         "enabled": bool(_stripe_key()),
         "product": "Lifetime Access",
-        "amount_display": "$19.95",
+        "amount_display": "$14.95",
         "currency": PRICE_CURRENCY.upper(),
     }
 
@@ -211,25 +224,29 @@ async def create_checkout_session(request: Request):
             detail="Stripe is not configured yet. Add STRIPE_SECRET_KEY to backend/.env.",
         )
     origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
-    price_id = os.environ.get("STRIPE_PRICE_ID", "") or ""
-    if price_id.startswith("price_"):
-        line_item = {"price": price_id, "quantity": 1}
-    else:
-        line_item = {
-            "price_data": {
-                "currency": PRICE_CURRENCY,
-                "unit_amount": PRICE_CENTS,
-                "product_data": {"name": PRODUCT_NAME},
-            },
-            "quantity": 1,
-        }
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    amount, applied_code = compute_amount((body or {}).get("promo_code"))
+    metadata = {"product": "lifetime_access"}
+    if applied_code:
+        metadata["promo_code"] = applied_code
+    line_item = {
+        "price_data": {
+            "currency": PRICE_CURRENCY,
+            "unit_amount": amount,
+            "product_data": {"name": PRODUCT_NAME},
+        },
+        "quantity": 1,
+    }
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=[line_item],
             success_url=f"{origin}/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{origin}/?checkout=cancelled",
-            metadata={"product": "lifetime_access"},
+            metadata=metadata,
         )
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))

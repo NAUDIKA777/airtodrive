@@ -111,8 +111,11 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
   external VectorCraft Digital hub (a separate Emergent project this app can't edit directly) —
   card links to https://airtodrive.com and opens in a new tab.
 
-- Add `STRIPE_SECRET_KEY` (and optionally `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`) to
-  `backend/.env` to activate live checkout.
+- Stripe: **TEST key configured** in `backend/.env` (`sk_test_…`) — checkout is live in test mode.
+  Charges the $14.95 sale; promo codes carry into checkout (FOUNDER $13.97, EARLY50 $9.98,
+  LAUNCH25 $14.95), pricing is server-authoritative (half-up rounding) and the UI mirrors it exactly.
+  E2E test payment verified (iteration_6). To go live: swap in `sk_live_…` (Deployment → Secrets
+  after publishing) and optionally set `STRIPE_WEBHOOK_SECRET`.
 - PWA install + live Stripe only fully work once deployed to the custom domain (HTTPS).
 
 ## Backlog

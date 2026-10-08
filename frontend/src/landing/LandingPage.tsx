@@ -60,8 +60,8 @@ const FAQS: { q: string; a: string }[] = [
   },
 ];
 
-const REGULAR_PRICE = 19.95;
-const SALE_PRICE = 14.95;
+const REGULAR_CENTS = 1995;
+const SALE_CENTS = 1495;
 const PROMO_CODES: Record<string, number> = { LAUNCH25: 25, EARLY50: 50, FOUNDER: 30 };
 
 export function LandingPage() {
@@ -79,8 +79,11 @@ export function LandingPage() {
   const [showInstall, setShowInstall] = useState(false);
   const [promo, setPromo] = useState("");
   const [applied, setApplied] = useState<{ code: string; pct: number } | null>(null);
-  const promoPrice = Math.round(REGULAR_PRICE * 100 * (1 - (applied?.pct ?? 0) / 100)) / 100;
-  const currentPrice = (applied ? Math.min(promoPrice, SALE_PRICE) : SALE_PRICE).toFixed(2);
+  // Mirror the server's integer-cent math exactly so the displayed price always
+  // equals what Stripe charges (server is authoritative).
+  const promoCents = Math.round(REGULAR_CENTS * (1 - (applied?.pct ?? 0) / 100));
+  const currentCents = applied ? Math.min(promoCents, SALE_CENTS) : SALE_CENTS;
+  const currentPrice = (currentCents / 100).toFixed(2);
 
   useEffect(() => {
     if (Platform.OS !== "web" || installed) return;
@@ -139,7 +142,7 @@ export function LandingPage() {
     );
 
   const BuyBtn = ({ testID, label }: { testID: string; label: string }) => (
-    <Pressable testID={testID} onPress={buy} disabled={busy} style={({ pressed }) => [styles.btn, styles.btnPrimary, pressed && styles.pressed]}>
+    <Pressable testID={testID} onPress={() => buy(applied?.code)} disabled={busy} style={({ pressed }) => [styles.btn, styles.btnPrimary, pressed && styles.pressed]}>
       <Icon name="lightning-bolt" size={16} color={colors.onBrandPrimary} />
       <Text style={[styles.btnText, { color: colors.onBrandPrimary }]}>{busy ? "Opening…" : label}</Text>
     </Pressable>
@@ -281,7 +284,7 @@ export function LandingPage() {
               )}
             </View>
 
-            <Pressable testID="buy-button" onPress={buy} disabled={busy} style={({ pressed }) => [styles.btn, styles.btnPrimary, styles.buyFull, pressed && styles.pressed]}>
+            <Pressable testID="buy-button" onPress={() => buy(applied?.code)} disabled={busy} style={({ pressed }) => [styles.btn, styles.btnPrimary, styles.buyFull, pressed && styles.pressed]}>
               <Icon name="lightning-bolt" size={18} color={colors.onBrandPrimary} />
               <Text style={[styles.btnText, styles.btnTextLg, { color: colors.onBrandPrimary }]}>
                 {busy ? "Opening checkout…" : "Buy Lifetime Access"}

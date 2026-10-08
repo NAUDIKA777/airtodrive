@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 6 — Stripe TEST key is now live and the full checkout flow works end-to-end. Backend: all 14 pytest tests pass (/api/checkout/config enabled with $14.95; /api/checkout/session returns real https://checkout.stripe.com cs_test_... URLs; server-authoritative /api/checkout/status reports $14.95 (none), $13.96 (FOUNDER), $9.98 (EARLY50), $14.95 (LAUNCH25 capped), $14.95 (bogus); invalid session id -> 400; unknown cs_ id -> 404; webhook -> 503 w/o secret). Frontend: landing shows $14.95 with $19.95 strike; invalid promo (NOPE) keeps $14.95 and shows no chip; FOUNDER chip renders ('FOUNDER - 30% off applied'); buy-button redirects to checkout.stripe.com with US$13.96 for FOUNDER and US$14.95 for base; /success without session_id shows 'Missing checkout session' and success-home returns to /. CRITICAL CLIENT-DISPLAY BUG: FOUNDER renders the card price as $13.97 (expected $13.96) while Stripe actually charges $13.96 — the UI shows a different price than the user will be charged. Root cause: JS Math.round is round-half-up (Math.round(1396.5)=1397) but Python's round() uses banker's rounding (round(1396.5)=1396), so the integer-cent fix landed in iteration 5 still mismatches the server for odd pct values. No deprecated expo-av/expo-barcode-scanner/expo-background-fetch, no SafeAreaView issues detected in the touched files.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "LandingPage pricing-card (discounted price display)",
+        "issue": "FOUNDER promo displays $13.97 in the pricing-card but Stripe Checkout charges US$13.96. Client/server rounding algorithms differ — JS Math.round(1396.5)=1397, Python round(1396.5)=1396 (banker's). The review-request requires $13.96 to be shown. LAUNCH25 and EARLY50 happen to agree between client+server; only FOUNDER (and any future odd pct) is affected. Reference: /app/frontend/src/landing/LandingPage.tsx:82.",
+        "testID": "pricing-card / promo-input / promo-apply",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_landing_checkout.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/iteration_6.json"
+  ],
+  "action_items": [
+    "Align frontend promo-price computation with the backend. Easiest fix: fetch amount_display from the server after applying a promo (e.g. POST /api/checkout/preview {promo_code} returning {amount_display}) so the UI number is literally what Stripe will charge. Minimal patch alternative in LandingPage.tsx:82 — mirror Python's banker's rounding: `function bankersRound(n){const f=Math.floor(n), d=n-f; if(d<0.5)return f; if(d>0.5)return f+1; return f%2===0?f:f+1;} const promoPrice = bankersRound(REGULAR_PRICE * 100 * (1 - (applied?.pct ?? 0) / 100)) / 100;` — this produces 13.96 for FOUNDER while leaving EARLY50=9.98 and LAUNCH25=14.96 (capped 14.95) unchanged.",
+    "(Optional) Make the invalid-promo toast live longer or add an inline error below the promo input so automated/manual testers can observe the feedback — the current toast disappears fast and the only visible invariant is 'price unchanged, no chip'."
+  ],
+  "critical_code_review_comments": [
+    "LandingPage.tsx:82 — Monetary display still re-implements the pricing rule on the client, which must byte-for-byte match server/Stripe. Prefer a single source of truth (server) rather than re-computing in JS at all.",
+    "LandingPage.tsx:65 — PROMO_CODES map is duplicated client+server (server.py:159). If one side changes (e.g. percent adjusted, code added), the two can drift. Ship the discount percentages from /api/checkout/config (or validate client-side only for UX, and let the server echo back the authoritative amount) to prevent drift.",
+    "server.py:226 — `success_url` derived from Origin header is good, but there is no HOSTS allowlist; a request from a hostile Origin header could redirect buyers to an attacker-controlled success page after a real Stripe payment. Consider restricting to a known allowlist (or using a configured PUBLIC_SITE_URL from .env).",
+    "server.py:270 — /api/checkout/status is unauthenticated and can be polled by anyone with a session_id (which is in the URL). Currently fine (amounts aren't sensitive), but worth noting if PII is ever added to the response."
+  ],
+  "updated_files": ["/app/backend/tests/test_landing_checkout.py"],
+  "success_rate": { "backend": "100% (14/14 pytest cases passed)", "frontend": "~86% (6/7 acceptance checks pass; 1 HIGH client-display bug: FOUNDER card shows $13.97 while Stripe charges $13.96)" },
+  "seed_data_creation": "pytest creates ephemeral Stripe TEST checkout sessions (cs_test_...) via POST /api/checkout/session and MongoDB `orders` rows upserted with order_status='pending'. One TEST_landing_checkout_suite status row created and read back. Nothing deleted — all data is namespaced to TEST and the Stripe test environment.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After the FOUNDER display fix, re-verify in the UI: (1) FOUNDER -> card shows $13.96, chip 'FOUNDER - 30% off applied', buy-button -> checkout.stripe.com showing US$13.96; (2) EARLY50 -> card $9.98, Stripe US$9.98; (3) LAUNCH25 -> card $14.95 (capped), Stripe US$14.95; (4) base (no promo) -> card $14.95, Stripe US$14.95; (5) invalid code (NOPE) -> card stays $14.95, no chip; (6) /success without session_id -> 'Missing checkout session' + success-home returns to /. Backend pytest suite /app/backend/tests/test_landing_checkout.py already covers (1)-(5) at the API/server level — just re-run it to confirm no regressions. For full E2E payment with the 4242 test card, drive the external checkout.stripe.com page manually (Playwright works but each run spins up Klarna/Link/hCaptcha heavy JS so a human-in-the-loop pass is faster). Important React Native Web gotcha for future tests: TextInput state only syncs via real keyboard events — use page.focus() + page.keyboard.type() (NOT page.fill()); page.fill sets the DOM value but React's `promo` state stays empty so Apply does nothing.",
+  "rca_of_issue": "RCA — JS vs Python half-rounding. The client computes `Math.round(19.95 * 100 * (1 - 0.30)) / 100`. 19.95*100*0.7 = 1396.5 exactly in IEEE-754 (verified: `(19.95*100*0.7).toString()==='1396.5'`). `Math.round(1396.5)` uses the ECMA-262 'round half to positive infinity' rule and returns 1397, so the UI prints $13.97. The server computes `round(REGULAR_CENTS * (1 - pct/100))` = `round(1995 * 0.7)` = `round(1396.5)`; Python 3 uses banker's rounding (round half to even), 1396 is even, so it returns 1396 and Stripe is charged $13.96. LAUNCH25 ends at 1496.25 (not a .5 boundary — Math.round=1496, Python round=1496) and gets capped to 1495 on both sides; EARLY50 ends at 997.5 — Math.round=998, Python round=998 (998 is even, banker's returns 998). Only FOUNDER lands on an odd banker's boundary and diverges. Reproduction: in a browser console `Math.round(19.95 * 100 * 0.7)` -> 1397; in Python `round(1995 * 0.7)` -> 1396. Mitigation: implement banker's rounding client-side (see action_items) OR, preferred, remove the duplicated rule and source the display amount from the backend."
+}

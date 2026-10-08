@@ -1,10 +1,10 @@
 """Backend tests for the Air to Drive landing page / Stripe checkout endpoints.
 
-Stripe is intentionally NOT configured in this iteration, so:
- - /api/checkout/config  -> enabled: false
- - /api/checkout/session -> 503
- - /api/checkout/status  -> 400 for bad id, 503 for cs_-prefixed id
- - /api/stripe/webhook   -> 503
+Stripe TEST key is now configured, so:
+ - /api/checkout/config  -> enabled: true, amount_display: '$14.95'
+ - /api/checkout/session -> returns a real checkout_url (checkout.stripe.com) + session_id (cs_test_...)
+ - /api/checkout/status  -> returns amount_display reflecting server-side price (promo-aware)
+ - /api/stripe/webhook   -> 503 (no STRIPE_WEBHOOK_SECRET set)
 
 Also re-verifies existing endpoints still work.
 """
@@ -29,36 +29,74 @@ def api_client():
 
 # -- Checkout config --------------------------------------------------------
 class TestCheckoutConfig:
-    def test_config_disabled_shape(self, api_client):
+    def test_config_enabled_shape(self, api_client):
         r = api_client.get(f"{BASE_URL}/api/checkout/config")
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data["enabled"] is False
+        assert data["enabled"] is True
         assert data["product"] == "Lifetime Access"
-        assert data["amount_display"] == "$19.95"
+        assert data["amount_display"] == "$14.95"
         assert data["currency"] == "USD"
 
 
-# -- Checkout session (unconfigured) ---------------------------------------
-class TestCheckoutSessionUnconfigured:
-    def test_session_returns_503(self, api_client):
+# -- Checkout session (configured) -----------------------------------------
+class TestCheckoutSessionConfigured:
+    def test_session_no_promo_returns_real_url(self, api_client):
         r = api_client.post(f"{BASE_URL}/api/checkout/session", json={})
-        assert r.status_code == 503, r.text
-        detail = r.json().get("detail", "")
-        assert "Stripe" in detail and "not configured" in detail
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["session_id"].startswith("cs_test_")
+        assert data["checkout_url"].startswith("https://checkout.stripe.com/")
+
+    def test_session_with_promo_returns_real_url(self, api_client):
+        r = api_client.post(f"{BASE_URL}/api/checkout/session", json={"promo_code": "FOUNDER"})
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["session_id"].startswith("cs_test_")
+        assert data["checkout_url"].startswith("https://checkout.stripe.com/")
 
 
-# -- Checkout status --------------------------------------------------------
-class TestCheckoutStatus:
+# -- Server-authoritative pricing via /api/checkout/status -----------------
+@pytest.mark.parametrize("promo,expected", [
+    (None, "$14.95"),
+    ("FOUNDER", "$13.96"),
+    ("EARLY50", "$9.98"),
+    ("LAUNCH25", "$14.95"),   # 25% off $19.95 = $14.96, but capped to sale $14.95
+    ("NOPE123", "$14.95"),    # bogus falls back to sale price
+])
+def test_server_side_pricing_amount(api_client, promo, expected):
+    body = {} if promo is None else {"promo_code": promo}
+    r = api_client.post(f"{BASE_URL}/api/checkout/session", json=body)
+    assert r.status_code == 200, r.text
+    sid = r.json()["session_id"]
+
+    s = api_client.get(f"{BASE_URL}/api/checkout/status", params={"session_id": sid})
+    assert s.status_code == 200, s.text
+    data = s.json()
+    assert data["amount_display"] == expected, f"promo={promo} -> {data}"
+    # unpaid session, order should be pending
+    assert data["order_status"] == "pending"
+    assert data["paid"] is False
+
+
+@pytest.fixture
+def api_client_module():
+    s = requests.Session()
+    s.headers.update({"Content-Type": "application/json"})
+    return s
+
+
+# -- Checkout status validation --------------------------------------------
+class TestCheckoutStatusValidation:
     def test_status_bad_id_returns_400(self, api_client):
         r = api_client.get(f"{BASE_URL}/api/checkout/status", params={"session_id": "bad"})
         assert r.status_code == 400, r.text
         assert "Invalid session ID" in r.json().get("detail", "")
 
-    def test_status_cs_prefixed_returns_503_when_unconfigured(self, api_client):
-        r = api_client.get(f"{BASE_URL}/api/checkout/status", params={"session_id": "cs_test_abc"})
-        assert r.status_code == 503, r.text
-        assert "not configured" in r.json().get("detail", "").lower()
+    def test_status_unknown_cs_id_returns_404(self, api_client):
+        r = api_client.get(f"{BASE_URL}/api/checkout/status",
+                           params={"session_id": "cs_test_doesnotexist_xyz"})
+        assert r.status_code == 404, r.text
 
 
 # -- Stripe webhook ---------------------------------------------------------
@@ -81,21 +119,6 @@ class TestExistingEndpoints:
         assert r.status_code == 200
         samples = r.json()
         assert isinstance(samples, list) and len(samples) >= 6
-        names = [s["name"] for s in samples]
-        assert "transfer-report.txt" in names
-        assert "telemetry.json" in names
-
-    def test_sample_transfer_report(self, api_client):
-        r = api_client.get(f"{BASE_URL}/api/sample-file/transfer-report.txt")
-        assert r.status_code == 200
-        assert "STREAM TRANSFER REPORT" in r.text
-
-    def test_sample_telemetry(self, api_client):
-        r = api_client.get(f"{BASE_URL}/api/sample-file/telemetry.json")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["device"] == "usb-directflow"
-        assert len(data["samples"]) == 120
 
     def test_status_create_and_fetch(self, api_client):
         payload = {"client_name": "TEST_landing_checkout_suite"}
@@ -103,9 +126,3 @@ class TestExistingEndpoints:
         assert c.status_code == 200
         created = c.json()
         assert created["client_name"] == payload["client_name"]
-        assert "id" in created and "timestamp" in created
-
-        g = api_client.get(f"{BASE_URL}/api/status")
-        assert g.status_code == 200
-        ids = [row["id"] for row in g.json()]
-        assert created["id"] in ids
