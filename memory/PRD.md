@@ -84,6 +84,18 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
 - Verified stable: ESLint clean, backend 18/18 pytest, frontend regression (iteration_3 & _4)
   all green. Build ready for GitHub export (use the "Save to Github" feature).
 
+## Implemented — Icons, social preview & promo (2026-06)
+- Generated favicon + app icons (icon.png, adaptive-icon.png, favicon.png, splash-image.png) from
+  the brand logo; app.json already references these paths.
+- Social-preview meta: switched web `output` from `single` → `static` so `app/+html.tsx` injects
+  Open Graph + Twitter tags (title, description, og:image = /og-image.jpg 1200x630 in `public/`,
+  theme-color, favicon + apple-touch-icon). Verified in served HTML and a full `expo export -p web`
+  (10 routes prerendered, no errors).
+- Promo-code field on the pricing card: client-side codes LAUNCH25 (25%), FOUNDER (30%),
+  EARLY50 (50%) with integer-cent rounding ($19.95 → $14.96 / $13.97 / $9.98), applied chip +
+  remove, success/error toasts. Display-only for now (not yet wired to Stripe).
+- Tested: iteration_5 (promo + OG + regression) green after a floating-point rounding fix.
+
 ## Pending config (needs user)
 - Add `STRIPE_SECRET_KEY` (and optionally `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`) to
   `backend/.env` to activate live checkout.

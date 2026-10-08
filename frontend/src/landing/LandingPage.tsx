@@ -1,7 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { Image } from "expo-image";
 import { useEffect, useState } from "react";
-import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Icon, type IconName } from "@/src/components/icon";
@@ -45,6 +45,9 @@ const PRICE_BULLETS = [
   "Priority email support",
 ];
 
+const BASE_PRICE = 19.95;
+const PROMO_CODES: Record<string, number> = { LAUNCH25: 25, EARLY50: 50, FOUNDER: 30 };
+
 export function LandingPage() {
   const styles = useStyles();
   const { colors } = useTheme();
@@ -58,6 +61,9 @@ export function LandingPage() {
   const { busy, buy } = useBuy((msg) => toast.show(msg, "info"));
 
   const [showInstall, setShowInstall] = useState(false);
+  const [promo, setPromo] = useState("");
+  const [applied, setApplied] = useState<{ code: string; pct: number } | null>(null);
+  const discounted = (Math.round(BASE_PRICE * 100 * (1 - (applied?.pct ?? 0) / 100)) / 100).toFixed(2);
 
   useEffect(() => {
     if (Platform.OS !== "web" || installed) return;
@@ -84,6 +90,22 @@ export function LandingPage() {
   const dismissInstall = async () => {
     await setPromptDismissed();
     setShowInstall(false);
+  };
+
+  const applyPromo = () => {
+    const code = promo.trim().toUpperCase();
+    const pct = PROMO_CODES[code];
+    if (pct) {
+      setApplied({ code, pct });
+      toast.show(`Promo ${code} applied — ${pct}% off`, "success");
+    } else {
+      toast.show("That promo code isn't valid", "error");
+    }
+  };
+
+  const removePromo = () => {
+    setApplied(null);
+    setPromo("");
   };
 
   const InstallBtn = ({ testID, label }: { testID: string; label: string }) =>
@@ -194,7 +216,10 @@ export function LandingPage() {
               <Text style={styles.planBadgeText}>LIFETIME ACCESS</Text>
             </View>
             <View style={styles.priceRow}>
-              <Text style={styles.priceBig}>{cfg.data?.amount_display ?? "$19.95"}</Text>
+              {applied ? (
+                <Text style={styles.priceStrike}>{cfg.data?.amount_display ?? "$19.95"}</Text>
+              ) : null}
+              <Text style={styles.priceBig}>{applied ? `$${discounted}` : cfg.data?.amount_display ?? "$19.95"}</Text>
               <Text style={styles.priceUnit}>one-time</Text>
             </View>
             <View style={styles.bullets}>
@@ -205,6 +230,39 @@ export function LandingPage() {
                 </View>
               ))}
             </View>
+
+            <View style={styles.promoWrap}>
+              {applied ? (
+                <View style={styles.promoApplied} testID="promo-applied">
+                  <Icon name="tag-check" size={16} color={colors.brandSecondary} />
+                  <Text style={styles.promoAppliedText}>
+                    {applied.code} · {applied.pct}% off applied
+                  </Text>
+                  <Pressable testID="promo-remove" onPress={removePromo} hitSlop={8}>
+                    <Icon name="close" size={16} color={colors.muted} />
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.promoRow}>
+                  <TextInput
+                    testID="promo-input"
+                    value={promo}
+                    onChangeText={setPromo}
+                    placeholder="Promo code"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    style={styles.promoInput}
+                    onSubmitEditing={applyPromo}
+                    returnKeyType="done"
+                  />
+                  <Pressable testID="promo-apply" onPress={applyPromo} style={({ pressed }) => [styles.promoApply, pressed && styles.pressed]}>
+                    <Text style={styles.promoApplyText}>Apply</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+
             <Pressable testID="buy-button" onPress={buy} disabled={busy} style={({ pressed }) => [styles.btn, styles.btnPrimary, styles.buyFull, pressed && styles.pressed]}>
               <Icon name="lightning-bolt" size={18} color={colors.onBrandPrimary} />
               <Text style={[styles.btnText, styles.btnTextLg, { color: colors.onBrandPrimary }]}>
@@ -326,6 +384,14 @@ const useStyles = makeStyles((colors) => ({
   priceRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, marginTop: spacing.lg },
   priceBig: { color: colors.onSurface, fontSize: 48, fontWeight: "900", fontFamily: mono, letterSpacing: -1 },
   priceUnit: { color: colors.muted, fontSize: 15, fontFamily: mono },
+  priceStrike: { color: colors.muted, fontSize: 20, fontFamily: mono, textDecorationLine: "line-through" },
+  promoWrap: { marginTop: spacing.lg },
+  promoRow: { flexDirection: "row", gap: spacing.sm },
+  promoInput: { flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: spacing.md, fontSize: 14, fontFamily: mono, letterSpacing: 1 },
+  promoApply: { paddingHorizontal: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: "rgba(0,229,255,0.4)", alignItems: "center", justifyContent: "center", minHeight: 44 },
+  promoApplyText: { color: colors.brandPrimary, fontSize: 13, fontFamily: mono, fontWeight: "700" },
+  promoApplied: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: "rgba(16,185,129,0.12)", borderWidth: 1, borderColor: "rgba(16,185,129,0.4)", borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md },
+  promoAppliedText: { flex: 1, color: colors.brandSecondary, fontSize: 13, fontFamily: mono },
   bullets: { marginTop: spacing.xl, gap: spacing.md },
   bulletRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   bulletText: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20 },

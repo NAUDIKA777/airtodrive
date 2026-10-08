@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only regression for Air to Drive landing (iteration 5). Social-preview meta tags, favicons, LAUNCH25 promo flow, invalid-promo flow, install-prompt dismissal persistence, buy-button Stripe-unconfigured info toast, /success without session_id handling, and /about + /browse routes all pass on both desktop 1280x900 and mobile 390x844 after the app.json web.output='static' switch. CRITICAL BUG: EARLY50 renders $9.97 (expected $9.98) and FOUNDER renders $13.96 (expected $13.97) due to IEEE-754 floating-point rounding in `(BASE_PRICE * (1 - pct/100)).toFixed(2)` (19.95*0.5 = 9.9749999…, 19.95*0.7 = 13.9649999…). LAUNCH25 happens to be exact ($14.96) so it was not caught by iteration-4. No Expo deprecated-package issues, no SafeAreaView issues detected in the touched files.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "LandingPage pricing-card (discounted price computation)",
+        "issue": "Floating-point rounding error: EARLY50 shows $9.97 instead of $9.98, FOUNDER shows $13.96 instead of $13.97. 19.95 * 0.5 evaluates to 9.9749999999999996 and 19.95 * 0.7 to 13.964999999999998 in JS, so .toFixed(2) rounds down. Fails the review-request acceptance criteria 'EARLY50 -> $9.98; FOUNDER -> $13.97'. Reference: /app/frontend/src/landing/LandingPage.tsx:66 (`const discounted = (BASE_PRICE * (1 - (applied?.pct ?? 0) / 100)).toFixed(2);`).",
+        "testID": "pricing-card / promo-input / promo-apply",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_5.json",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "action_items": [
+    "Fix FP rounding in LandingPage.tsx:66. Suggested fix (integer-cent math): `const discounted = (Math.round(BASE_PRICE * 100 * (1 - (applied?.pct ?? 0) / 100)) / 100).toFixed(2);` — this will give LAUNCH25=$14.96, EARLY50=$9.98, FOUNDER=$13.97 as specified."
+  ],
+  "critical_code_review_comments": [
+    "LandingPage.tsx:66 — Monetary calculations should always use integer cents (or a decimal lib) rather than Number * Number followed by toFixed, to avoid IEEE-754 drift. Current code only coincidentally produces the right value for 25% off.",
+    "LandingPage.tsx:49 — PROMO_CODES is defined at module scope with a static mapping. If codes are later moved server-side, consider sourcing them from the backend (`/api/checkout/config` or similar) so client bundle doesn't leak the full list and server can validate.",
+    "LandingPage.tsx:220-222 — strike/display uses `cfg.data?.amount_display ?? '$19.95'` for the base but a locally computed `$${discounted}` string for the discounted price; if the server ever changes `BASE_PRICE`, the two will go out of sync. Compute discounted from the configured base amount (or at minimum, keep BASE_PRICE as the single source of truth)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (not tested per request)", "frontend": "~92% (12/13 acceptance checks pass; 1 HIGH bug: EARLY50/FOUNDER price rounding)" },
+  "seed_data_creation": "None.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After the FP-rounding fix in LandingPage.tsx:66, re-verify: (1) LAUNCH25 shows $14.96, (2) EARLY50 shows $9.98, (3) FOUNDER shows $13.97, each with the $19.95 strikethrough + promo-applied chip + success toast; (4) invalid code (e.g. NOPE123) still shows error toast and keeps $19.95 with no chip; (5) promo-remove restores $19.95. Everything else in iteration 5 (SEO meta tags via +html.tsx under web.output='static', install-prompt dismissal persistence, buy-button info toast with 503 from backend as expected, /success without session_id, /about, /browse) is already passing — no need to re-run unless the fix touches those files.",
+  "rca_of_issue": "RCA — Floating-point drift in JS. 19.95 cannot be represented exactly in IEEE-754 double; it is stored as 19.949999999999999289… Multiplying by 0.5 gives 9.9749999999999996…, and by 0.7 gives 13.964999999999998. Number.prototype.toFixed truncates/rounds the decimal expansion of the actual float, so .toFixed(2) returns '9.97' and '13.96' instead of the mathematically correct '9.98' and '13.97'. LAUNCH25 (25% off) happens to land on a float that rounds correctly, which is why iteration 4 did not catch it. Reproduction: in any JS console run `(19.95 * 0.5).toFixed(2)` → '9.97', `(19.95 * 0.7).toFixed(2)` → '13.96'. Mitigation: switch to integer cents — `(Math.round(BASE_PRICE * 100 * (1 - pct/100)) / 100).toFixed(2)` — which rounds in the integer domain and is immune to this class of error."
+}
