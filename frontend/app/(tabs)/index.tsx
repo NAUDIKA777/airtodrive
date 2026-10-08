@@ -207,8 +207,8 @@ export default function TransferScreen() {
     doTransfer(pending, source);
   }, [pending, source, doTransfer]);
 
-  // Launch the camera straight into record mode, then stream the clip to USB.
-  const recordVideo = useCallback(async () => {
+  // Launch the camera to capture a photo or live video, then stream it to USB.
+  const openCamera = useCallback(async () => {
     try {
       let perm = await ImagePicker.getCameraPermissionsAsync();
       if (!perm.granted && perm.canAskAgain) {
@@ -219,22 +219,24 @@ export default function TransferScreen() {
           toast.show("Enable camera access in Settings", "error");
           Linking.openSettings().catch(() => {});
         } else {
-          toast.show("Camera access is needed to record", "info");
+          toast.show("Camera access is needed to capture", "info");
         }
         return;
       }
       const res = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["videos"],
+        mediaTypes: ["images", "videos"],
         videoMaxDuration: 300,
+        quality: 1,
       });
       if (res.canceled || !res.assets?.length) return;
       const a = res.assets[0];
-      const name = a.fileName ?? `VID_${Date.now()}.mp4`;
-      const mime = a.mimeType ?? mimeFromName(name) ?? "video/mp4";
+      const isVideo = a.type === "video" || (a.mimeType ?? "").startsWith("video") || a.duration != null;
+      const name = a.fileName ?? (isVideo ? `VID_${Date.now()}.mp4` : `IMG_${Date.now()}.jpg`);
+      const mime = a.mimeType ?? mimeFromName(name);
       const item: PendingItem = {
         name,
         mimeType: mime,
-        kind: "video",
+        kind: kindFromMime(mime, name),
         size: a.fileSize ?? 0,
         assetUri: a.uri,
       };
@@ -402,24 +404,10 @@ export default function TransferScreen() {
               </View>
             ) : (
               <View style={styles.block}>
-                <Pressable
-                  testID="record-video"
-                  onPress={recordVideo}
-                  disabled={running}
-                  style={({ pressed }) => [styles.recordBtn, pressed && styles.pressed]}
-                >
-                  <View style={styles.recordIcon}>
-                    <Icon name="video" size={22} color={colors.onBrandPrimary} />
-                  </View>
-                  <View style={styles.flex}>
-                    <Text style={styles.recordTitle}>Record Video</Text>
-                    <Text style={styles.recordSub}>Opens the camera · streams straight to USB</Text>
-                  </View>
-                  <Icon name="chevron-right" size={20} color={colors.onBrandPrimary} />
-                </Pressable>
                 <View style={styles.pickRow}>
-                  <PickButton icon="image-multiple-outline" label="Photos / Videos" onPress={pickMedia} disabled={running} styles={styles} colors={colors} testID="pick-media" />
-                  <PickButton icon="file-music-outline" label="Audio / Files" onPress={pickDoc} disabled={running} styles={styles} colors={colors} testID="pick-doc" />
+                  <PickButton icon="image-multiple-outline" label="Photos" onPress={pickMedia} disabled={running} styles={styles} colors={colors} testID="pick-media" />
+                  <PickButton icon="file-outline" label="Files" onPress={pickDoc} disabled={running} styles={styles} colors={colors} testID="pick-doc" />
+                  <PickButton icon="camera-outline" label="Camera" onPress={openCamera} disabled={running} styles={styles} colors={colors} testID="pick-camera" />
                 </View>
               </View>
             )}
@@ -586,14 +574,9 @@ const useStyles = makeStyles((colors) => ({
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontFamily: mono },
   chipTextActive: { color: colors.onBrandPrimary, fontWeight: "700" },
 
-  pickRow: { flexDirection: "row", gap: spacing.md },
-  pickBtn: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.xl, minHeight: 96 },
+  pickRow: { flexDirection: "row", gap: spacing.sm },
+  pickBtn: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.lg, minHeight: 92 },
   pickLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontFamily: mono },
-
-  recordBtn: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md, minHeight: 60 },
-  recordIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
-  recordTitle: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: "800", fontFamily: mono, letterSpacing: 0.5 },
-  recordSub: { color: colors.onBrandPrimary, fontSize: 11, fontFamily: mono, opacity: 0.85, marginTop: 2 },
 
   selected: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, padding: spacing.md },
   selectedName: { color: colors.onSurface, fontSize: 14, fontWeight: "600" },
