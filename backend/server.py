@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
-import json
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List
 import uuid
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 
 
 ROOT_DIR = Path(__file__).parent
@@ -22,7 +22,13 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 
@@ -44,7 +50,7 @@ async def root():
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
     status_obj = StatusCheck(client_name=input.client_name)
-    await db.status_checks.insert_one(status_obj.dict())
+    await db.status_checks.insert_one(status_obj.model_dump())
     return status_obj
 
 
@@ -276,7 +282,11 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid webhook")
     etype = event["type"]
     if etype in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
-        verified = stripe.checkout.Session.retrieve(event["data"]["object"]["id"])
+        try:
+            verified = stripe.checkout.Session.retrieve(event["data"]["object"]["id"])
+        except stripe.error.StripeError:
+            # Let Stripe retry; our upsert is idempotent on session_id.
+            raise HTTPException(status_code=502, detail="Could not verify session")
         await _record_session(verified)
     elif etype == "checkout.session.async_payment_failed":
         sid = event["data"]["object"]["id"]
@@ -291,7 +301,7 @@ app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -302,8 +312,3 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

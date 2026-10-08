@@ -72,11 +72,22 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
   verifies payment on return. Stripe keys NOT yet provided → endpoints return 503 and the buy
   button shows an info toast (graceful). Tested: iteration_2 (10/10 backend + all frontend flows).
 
+## Implemented — Review cleanup + brand logo (2026-06)
+- Full code review (Maxx) applied: added try/catch + error toast around phone-media/document
+  pickers (no more silent failures); migrated all deprecated RN-Web `shadow*` props to
+  `boxShadow` and moved `pointerEvents` into style → **zero console deprecation warnings** on web;
+  backend `@app.on_event('shutdown')` → `lifespan`, `.dict()` → `model_dump()`, Stripe webhook
+  `retrieve` wrapped in try/except, CORS `allow_credentials=False`; removed dead code
+  (`src/navigation.ts`, unused `import json`, unused `canInstall`).
+- Replaced the generated hero emblem with the user's real **AIR TO DRIVE** logo
+  (`assets/images/air-to-drive-logo.jpg`); deleted the now-unused `BrandEmblem.tsx`.
+- Verified stable: ESLint clean, backend 18/18 pytest, frontend regression (iteration_3 & _4)
+  all green. Build ready for GitHub export (use the "Save to Github" feature).
+
 ## Pending config (needs user)
 - Add `STRIPE_SECRET_KEY` (and optionally `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`) to
   `backend/.env` to activate live checkout.
 - PWA install + live Stripe only fully work once deployed to the custom domain (HTTPS).
-- Optional: real "Air to Drive" logo image (Drive link was not public) to replace `BrandEmblem`.
 
 ## Backlog
 - P1: Multi-file / batch queue of transfers.

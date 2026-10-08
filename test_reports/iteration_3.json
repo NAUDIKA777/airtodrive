@@ -1,0 +1,38 @@
+{
+  "summary": "Cleanup-iteration regression verified end-to-end — nothing regressed. Backend: 18/18 pytest cases green (test_landing_checkout.py + test_usb_directflow_api.py). Backend lifespan migration is clean — supervisor shows 'Application startup complete' with no deprecation warnings; GET /api/ returns {'message':'USB DirectFlow API'}; POST /api/status + GET /api/status round-trips with model_dump() (no _id leaked, UUID id persisted); GET /api/samples returns 6 items including transfer-report.txt + telemetry.json; GET /api/sample-file/transfer-report.txt returns 'STREAM TRANSFER REPORT' text; GET /api/sample-file/telemetry.json returns 120 samples. Stripe (unconfigured): /api/checkout/config => {enabled:false, product:'Lifetime Access', amount_display:'$19.95', currency:'USD'}; POST /api/checkout/session => 503 with 'Stripe is not configured yet'; GET /api/checkout/status?session_id=bad => 400 'Invalid session ID'; cs_* => 503; POST /api/stripe/webhook => 503 (no secret). CORS wildcard works (allow_credentials=False). Frontend web landing '/': hero-headline 'Massive Files Directly to External Drives, Zero Phone Storage Required', pricing-card shows $19.95, feature-video / feature-pro / feature-astro, nav-buy / hero-buy / buy-button / hero-install all present and tappable; install-prompt auto-opens, install-dismiss hides it and dismissal persists across reload (AsyncStorage flag). All three buy affordances trigger POST /api/checkout/session => 503 and surface the info toast 'Checkout isn't live yet — add your Stripe key to enable purchases.' — no crash, no navigation. /success without session_id shows 'Something went wrong — Missing checkout session.' and success-home routes back to '/'. CRITICAL BUG-FIX VERIFIED: on (tabs) Transfer, toggling source to PHONE MEDIA renders pick-media + pick-doc; clicking pick-doc on web does NOT crash, no red-screen, no unhandled rejection — the new try/catch surfaces gracefully (web file dialog may no-op). Native simulated-drive flow on web: connect-button attaches SIM-USB 32G, sample-ForBiggerBlazes.mp4 selectable, start-button runs the stream to completion (STREAM CONSOLE shows DONE with 2.4 MB WRITTEN / 2.4 MB TOTAL, 'Transfer complete'); Browse tab lists '1 files on drive · 2.4 MB' and ForBiggerBlazes.mp4 row; tapping the row opens the preview with scrubber (video frame blank on web as expected). nav-install is only rendered on wide (desktop) viewport — expected responsive behavior, hero-install serves on mobile. No React Native red screens. Prior shadow*/pointerEvents console warnings flagged in iteration_2 appear to have been migrated — no new deprecation errors surfaced during this run.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_landing_checkout.py",
+    "/app/backend/tests/test_usb_directflow_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "No action required — cleanup iteration is clean. Backend 18/18 green, landing + /success flows intact, native simulated-drive E2E (connect → select sample → transfer → Browse → preview) still works, picker bug-fix verified (no crash, graceful toast path in place).",
+    "When Stripe keys are later supplied (STRIPE_SECRET_KEY + optional STRIPE_PRICE_ID + STRIPE_WEBHOOK_SECRET), re-run the suite — /api/checkout/config should flip enabled:true, /api/checkout/session should return 200 with checkout_url+session_id, /api/checkout/status with real cs_ id should return paid/pending, and /api/stripe/webhook should verify signatures."
+  ],
+  "critical_code_review_comments": [
+    "server.py: @asynccontextmanager lifespan correctly replaces @app.on_event('shutdown') — client.close() runs after yield (iteration spec met).",
+    "server.py:53 uses status_obj.model_dump() (Pydantic v2) — correct replacement for deprecated .dict().",
+    "server.py:285-289 wraps the webhook stripe.checkout.Session.retrieve in try/except and raises 502 so Stripe will retry (idempotent upsert on session_id) — correct.",
+    "server.py:302-308 CORSMiddleware now uses allow_credentials=False with allow_origins=['*'] — valid combination (previously the combination was invalid).",
+    "(tabs)/index.tsx:118-168 pickMedia + pickDoc are wrapped in try/catch and surface toast.show('Could not open the ... picker', 'error') on failure — matches the specified bug-fix.",
+    "(tabs)/index.tsx:131, 154 — early-return on canceled/empty assets (no toast) is correct UX, no false error on cancel.",
+    "LandingPage/BrandEmblem/useCheckout: 503 is handled as info toast path, no uncaught promise rejections observed."
+  ],
+  "updated_files": [
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)",
+    "/app/test_reports/iteration_3.json (new)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% (landing + /success + install-prompt + 3 buy affordances + Transfer→Browse→Preview + picker safety all verified)"},
+  "seed_data_creation": "Two StatusCheck rows in MongoDB with client_name='TEST_landing_checkout_suite' and 'TEST_usb_directflow_backend_tests'. One simulated drive transfer artifact in in-memory simulated-drive store (ForBiggerBlazes.mp4, 2.4 MB) — resets on page reload.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both backend test files already cover config/session/status/webhook (unconfigured) + root/samples/sample-files/status. When Stripe keys land, add tests expecting enabled:true + 200 on session + real cs_* status flow. Base URL comes from EXPO_PUBLIC_BACKEND_URL in /app/frontend/.env (loaded in test_landing_checkout.py). On web, (tabs)/index renders only when navigating to /(tabs) — '/' always renders LandingPage. Progress-done detection: prefer waiting for the STREAM CONSOLE text 'Transfer complete' or the drive-status-card used-bytes change over polling [data-testid=transfer-progress] visibility (progress bar updates throughout).",
+  "rca_of_issue": "N/A — cleanup iteration. All migrations (lifespan handler, model_dump, webhook try/except, CORS allow_credentials=False, boxShadow / style.pointerEvents, pick-media/pick-doc try/catch, removal of src/navigation.ts) applied without regression. All 18 backend tests pass; all specified frontend flows (landing, install-prompt, 3 buy affordances → info toast, /success empty session, native connect→transfer→Browse→preview) work; the picker bug-fix is observable (clicking pick-doc with no file does not crash and does not surface a false error)."
+}

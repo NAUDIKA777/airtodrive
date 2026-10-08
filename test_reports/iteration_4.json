@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend regression after BrandEmblem removal + logo image swap. All 5 requested checks pass: (1) '/' renders cleanly with no bundling/red-screen errors — no PAGE ERROR console entries, no stale BrandEmblem import anywhere in /app/frontend/src; (2) hero-logo testID resolves to an <img> with src pointing to assets/images/air-to-drive-logo.jpg and renders at 340x450 on wide (>=900px) and 250x331 on mobile 390x844; (3) nav (nav-install only on wide, nav-buy), hero (hero-buy, hero-install), auto install-prompt with install-accept/install-dismiss (dismissal hides it), feature-video / feature-pro / feature-astro cards, pricing-card with $19.95 and all 5 PRICE_BULLETS are all visible; (4) buy-button / hero-buy / nav-buy all surface the info toast 'Checkout isn't live yet — add your Stripe key to enable purchases' and the page stays intact (Stripe 503 response from /api/checkout/config is handled by useCheckoutConfig without crashing); (5) /success with no session_id shows 'Missing checkout session.' and success-home navigates back to '/' which re-renders the landing. Tested on both desktop 1280x800 and mobile 390x844 viewports.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "BrandEmblem import/reference fully removed from LandingPage.tsx — only stale occurrence is in /app/frontend/.metro-cache/ (safe, regenerated on next bundle).",
+    "hero-logo uses expo-image <Image> with contentFit='contain' and a bundled require() — correct pattern for Expo web/native parity."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Landing page is stable. Stripe checkout returns 503 by design (no keys configured). buy/hero-buy/nav-buy all route through useBuy which surfaces the info toast via useCheckoutConfig.enabled=false path. /success relies on session_id query param.",
+  "rca_of_issue": "N/A — pure regression pass, no issues found."
+}

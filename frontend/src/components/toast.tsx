@@ -50,8 +50,7 @@ export function ToastProvider({ children }: PropsWithChildren) {
         <Animated.View
           entering={FadeInUp.springify().damping(18)}
           exiting={FadeOutUp.duration(180)}
-          style={[styles.wrap, { top: insets.top + spacing.sm }]}
-          pointerEvents="box-none"
+          style={[styles.wrap, { top: insets.top + spacing.sm, pointerEvents: "box-none" }]}
         >
           <Pressable
             testID="toast"

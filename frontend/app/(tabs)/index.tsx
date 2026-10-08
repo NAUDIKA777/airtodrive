@@ -116,48 +116,56 @@ export default function TransferScreen() {
   }, []);
 
   const pickMedia = useCallback(async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      if (!perm.canAskAgain) {
-        toast.show("Enable photo access in Settings", "error");
-        Linking.openSettings().catch(() => {});
-      } else {
-        toast.show("Photo library access is needed", "info");
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        if (!perm.canAskAgain) {
+          toast.show("Enable photo access in Settings", "error");
+          Linking.openSettings().catch(() => {});
+        } else {
+          toast.show("Photo library access is needed", "info");
+        }
+        return;
       }
-      return;
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 1 });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      const name = a.fileName ?? nameFromUrl(a.uri);
+      const mime = a.mimeType ?? mimeFromName(name);
+      setPending({
+        name,
+        mimeType: mime,
+        kind: kindFromMime(mime, name),
+        size: a.fileSize ?? 0,
+        assetUri: a.uri,
+      });
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+    } catch {
+      toast.show("Could not open the media picker", "error");
     }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 1 });
-    if (res.canceled || !res.assets?.length) return;
-    const a = res.assets[0];
-    const name = a.fileName ?? nameFromUrl(a.uri);
-    const mime = a.mimeType ?? mimeFromName(name);
-    setPending({
-      name,
-      mimeType: mime,
-      kind: kindFromMime(mime, name),
-      size: a.fileSize ?? 0,
-      assetUri: a.uri,
-    });
-    if (Platform.OS !== "web") Haptics.selectionAsync();
   }, [toast]);
 
   const pickDoc = useCallback(async () => {
-    const res = await DocumentPicker.getDocumentAsync({
-      type: ["audio/*", "text/*", "application/json", "application/pdf", "*/*"],
-      copyToCacheDirectory: true,
-    });
-    if (res.canceled || !res.assets?.length) return;
-    const a = res.assets[0];
-    const mime = a.mimeType ?? mimeFromName(a.name);
-    setPending({
-      name: a.name,
-      mimeType: mime,
-      kind: kindFromMime(mime, a.name),
-      size: a.size ?? 0,
-      assetUri: a.uri,
-    });
-    if (Platform.OS !== "web") Haptics.selectionAsync();
-  }, []);
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ["audio/*", "text/*", "application/json", "application/pdf", "*/*"],
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      const mime = a.mimeType ?? mimeFromName(a.name);
+      setPending({
+        name: a.name,
+        mimeType: mime,
+        kind: kindFromMime(mime, a.name),
+        size: a.size ?? 0,
+        assetUri: a.uri,
+      });
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+    } catch {
+      toast.show("Could not open the file picker", "error");
+    }
+  }, [toast]);
 
   const start = useCallback(async () => {
     if (!drive || !pending) return;

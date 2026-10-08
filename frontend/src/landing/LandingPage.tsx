@@ -1,4 +1,5 @@
 import { LinearGradient } from "expo-linear-gradient";
+import { Image } from "expo-image";
 import { useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,7 +7,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon, type IconName } from "@/src/components/icon";
 import { useToast } from "@/src/components/toast";
 import { mono } from "@/src/fonts";
-import { BrandEmblem } from "@/src/landing/BrandEmblem";
 import { useBuy, useCheckoutConfig } from "@/src/landing/useCheckout";
 import { setPromptDismissed, usePwaInstall, wasPromptDismissed } from "@/src/landing/usePwaInstall";
 import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
@@ -53,7 +53,7 @@ export function LandingPage() {
   const { width } = useWindowDimensions();
   const wide = width >= 900;
 
-  const { canInstall, installed, promptInstall } = usePwaInstall();
+  const { installed, promptInstall } = usePwaInstall();
   const cfg = useCheckoutConfig();
   const { busy, buy } = useBuy((msg) => toast.show(msg, "info"));
 
@@ -154,7 +154,14 @@ export function LandingPage() {
                 </View>
               </View>
               <View style={[styles.heroArt, wide && { flex: 1 }]}>
-                <BrandEmblem size={wide ? 300 : 230} />
+                <View style={styles.logoGlow}>
+                  <Image
+                    testID="hero-logo"
+                    source={require("@/assets/images/air-to-drive-logo.jpg")}
+                    style={{ width: wide ? 340 : 250, height: (wide ? 340 : 250) / 0.754, borderRadius: 20 }}
+                    contentFit="contain"
+                  />
+                </View>
               </View>
             </View>
           </View>
@@ -277,7 +284,7 @@ const useStyles = makeStyles((colors) => ({
   navBtns: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
 
   btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, paddingVertical: 10, paddingHorizontal: spacing.lg, borderRadius: radius.md, minHeight: 44 },
-  btnPrimary: { backgroundColor: colors.brandPrimary, shadowColor: colors.brandPrimary, shadowOpacity: 0.5, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
+  btnPrimary: { backgroundColor: colors.brandPrimary, boxShadow: `0px 0px 16px ${colors.brandPrimary}80` },
   btnGhost: { backgroundColor: "transparent", borderWidth: 1, borderColor: "rgba(0,229,255,0.4)" },
   btnText: { fontSize: 14, fontWeight: "700", fontFamily: mono, letterSpacing: 0.5 },
   btnTextLg: { fontSize: 16 },
@@ -289,7 +296,7 @@ const useStyles = makeStyles((colors) => ({
   heroWrapWide: { flexDirection: "row", alignItems: "center", gap: spacing["3xl"] },
   heroText: { gap: spacing.lg, alignItems: "flex-start" },
   pill: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: "rgba(0,229,255,0.3)", borderRadius: radius.pill, paddingVertical: 6, paddingHorizontal: spacing.md },
-  pillDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.brandPrimary, shadowColor: colors.brandPrimary, shadowOpacity: 1, shadowRadius: 8 },
+  pillDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.brandPrimary, boxShadow: `0px 0px 8px ${colors.brandPrimary}` },
   pillText: { color: colors.onBrandTertiary, fontSize: 11, fontFamily: mono, letterSpacing: 1 },
   h1: { color: colors.onSurface, fontSize: 34, fontWeight: "900", lineHeight: 40, letterSpacing: -0.5 },
   h1Wide: { fontSize: 50, lineHeight: 56 },
@@ -300,6 +307,7 @@ const useStyles = makeStyles((colors) => ({
   trustItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   trustText: { color: colors.muted, fontSize: 12, fontFamily: mono },
   heroArt: { alignItems: "center", justifyContent: "center" },
+  logoGlow: { borderRadius: 24, boxShadow: `0px 0px 70px ${colors.brandPrimary}33` },
 
   kicker: { color: colors.brandPrimary, fontSize: 12, fontFamily: mono, letterSpacing: 2, marginBottom: spacing.sm },
   h2: { color: colors.onSurface, fontSize: 26, fontWeight: "800", marginBottom: spacing.xl, letterSpacing: -0.3 },
@@ -311,7 +319,7 @@ const useStyles = makeStyles((colors) => ({
   featureTitle: { color: colors.onSurface, fontSize: 18, fontWeight: "800" },
   featureBody: { color: colors.muted, fontSize: 14, lineHeight: 21 },
 
-  pricingCard: { width: "100%", maxWidth: 440, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(0,229,255,0.35)", padding: spacing.xl, overflow: "hidden", shadowColor: colors.brandPrimary, shadowOpacity: 0.25, shadowRadius: 40, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
+  pricingCard: { width: "100%", maxWidth: 440, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(0,229,255,0.35)", padding: spacing.xl, overflow: "hidden", boxShadow: `0px 0px 40px ${colors.brandPrimary}40` },
   pricingGlow: { position: "absolute", left: 0, right: 0, top: 0, height: 160 },
   planBadge: { alignSelf: "flex-start", backgroundColor: colors.brandTertiary, borderRadius: radius.sm, paddingVertical: 5, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: "rgba(0,229,255,0.3)" },
   planBadgeText: { color: colors.brandPrimary, fontSize: 11, fontFamily: mono, letterSpacing: 1.5, fontWeight: "700" },
@@ -331,7 +339,7 @@ const useStyles = makeStyles((colors) => ({
 
   overlay: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center", padding: spacing.lg },
   overlayBg: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.75)" },
-  installCard: { width: "100%", maxWidth: 400, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(0,229,255,0.35)", padding: spacing.xl, alignItems: "center", gap: spacing.sm, shadowColor: colors.brandPrimary, shadowOpacity: 0.3, shadowRadius: 40, elevation: 16 },
+  installCard: { width: "100%", maxWidth: 400, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: "rgba(0,229,255,0.35)", padding: spacing.xl, alignItems: "center", gap: spacing.sm, boxShadow: `0px 0px 40px ${colors.brandPrimary}4D` },
   installIcon: { width: 64, height: 64, borderRadius: radius.lg, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(0,229,255,0.3)" },
   installTitle: { color: colors.onSurface, fontSize: 20, fontWeight: "800", marginTop: spacing.xs },
   installBody: { color: colors.muted, fontSize: 14, lineHeight: 20, textAlign: "center" },
