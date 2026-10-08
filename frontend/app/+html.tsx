@@ -24,16 +24,21 @@ export default function Root({ children }: PropsWithChildren) {
         <title>{TITLE}</title>
         <meta name="description" content={DESCRIPTION} />
         <meta name="theme-color" content="#00E5FF" />
+        <link rel="canonical" href={SITE_URL} />
         <link rel="icon" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/og-image.jpg" />
 
         {/* Open Graph */}
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Air to Drive" />
+        <meta property="og:locale" content="en_US" />
         <meta property="og:title" content={TITLE} />
         <meta property="og:description" content={DESCRIPTION} />
         <meta property="og:url" content={SITE_URL} />
         <meta property="og:image" content={OG_IMAGE} />
+        <meta property="og:image:secure_url" content={OG_IMAGE} />
+        <meta property="og:image:type" content="image/jpeg" />
+        <meta property="og:image:alt" content="Air to Drive — stream massive files straight to a USB drive" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
 
@@ -42,6 +47,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="twitter:title" content={TITLE} />
         <meta name="twitter:description" content={DESCRIPTION} />
         <meta name="twitter:image" content={OG_IMAGE} />
+        <meta name="twitter:image:alt" content="Air to Drive — stream massive files straight to a USB drive" />
 
         {/*
           Disable body scrolling on web to make ScrollView components work correctly.

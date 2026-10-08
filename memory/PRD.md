@@ -90,7 +90,8 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
 - Social-preview meta: switched web `output` from `single` → `static` so `app/+html.tsx` injects
   Open Graph + Twitter tags (title, description, og:image = /og-image.jpg 1200x630 in `public/`,
   theme-color, favicon + apple-touch-icon). Verified in served HTML and a full `expo export -p web`
-  (10 routes prerendered, no errors).
+  (10 routes prerendered, no errors). Domain finalized to **airtodrive.com**: added `<link rel="canonical">`,
+  og:url/secure_url/locale/image:alt and twitter:image:alt all pointing at airtodrive.com.
 - Promo-code field on the pricing card: client-side codes LAUNCH25 (25%), FOUNDER (30%),
   EARLY50 (50%) with integer-cent rounding ($19.95 → $14.96 / $13.97 / $9.98), applied chip +
   remove, success/error toasts. Display-only for now (not yet wired to Stripe).
