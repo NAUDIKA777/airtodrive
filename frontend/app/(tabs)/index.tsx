@@ -167,37 +167,84 @@ export default function TransferScreen() {
     }
   }, [toast]);
 
-  const start = useCallback(async () => {
-    if (!drive || !pending) return;
-    abortRef.current = { aborted: false };
-    setRunning(true);
-    setProgress(null);
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+  const doTransfer = useCallback(
+    async (item: PendingItem, src: TransferSource) => {
+      if (!drive) return;
+      abortRef.current = { aborted: false };
+      setRunning(true);
+      setProgress(null);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      try {
+        await runTransfer({
+          url: item.url,
+          assetUri: item.assetUri,
+          name: item.name,
+          mimeType: item.mimeType,
+          size: item.size || undefined,
+          source: src,
+          compress,
+          driveInfo: drive,
+          onProgress: setProgress,
+          signal: abortRef.current,
+        });
+        toast.show(`Streamed ${item.name} to drive`, "success");
+        qc.invalidateQueries({ queryKey: ["files"] });
+        qc.invalidateQueries({ queryKey: ["drive-usage"] });
+        setPending(null);
+        setUrl("");
+      } catch (e: any) {
+        const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
+        toast.show(cancelled ? "Transfer cancelled" : "Transfer failed", cancelled ? "info" : "error");
+      } finally {
+        setRunning(false);
+      }
+    },
+    [drive, compress, toast, qc],
+  );
+
+  const start = useCallback(() => {
+    if (!pending) return;
+    doTransfer(pending, source);
+  }, [pending, source, doTransfer]);
+
+  // Launch the camera straight into record mode, then stream the clip to USB.
+  const recordVideo = useCallback(async () => {
     try {
-      await runTransfer({
-        url: pending.url,
-        assetUri: pending.assetUri,
-        name: pending.name,
-        mimeType: pending.mimeType,
-        size: pending.size || undefined,
-        source,
-        compress,
-        driveInfo: drive,
-        onProgress: setProgress,
-        signal: abortRef.current,
+      let perm = await ImagePicker.getCameraPermissionsAsync();
+      if (!perm.granted && perm.canAskAgain) {
+        perm = await ImagePicker.requestCameraPermissionsAsync();
+      }
+      if (!perm.granted) {
+        if (!perm.canAskAgain) {
+          toast.show("Enable camera access in Settings", "error");
+          Linking.openSettings().catch(() => {});
+        } else {
+          toast.show("Camera access is needed to record", "info");
+        }
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["videos"],
+        videoMaxDuration: 300,
       });
-      toast.show(`Streamed ${pending.name} to drive`, "success");
-      qc.invalidateQueries({ queryKey: ["files"] });
-      qc.invalidateQueries({ queryKey: ["drive-usage"] });
-      setPending(null);
-      setUrl("");
-    } catch (e: any) {
-      const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
-      toast.show(cancelled ? "Transfer cancelled" : "Transfer failed", cancelled ? "info" : "error");
-    } finally {
-      setRunning(false);
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      const name = a.fileName ?? `VID_${Date.now()}.mp4`;
+      const mime = a.mimeType ?? mimeFromName(name) ?? "video/mp4";
+      const item: PendingItem = {
+        name,
+        mimeType: mime,
+        kind: "video",
+        size: a.fileSize ?? 0,
+        assetUri: a.uri,
+      };
+      setPending(item);
+      if (Platform.OS !== "web") Haptics.selectionAsync();
+      await doTransfer(item, "local");
+    } catch {
+      toast.show("Could not open the camera", "error");
     }
-  }, [drive, pending, source, compress, toast, qc]);
+  }, [toast, doTransfer]);
 
   const cancel = useCallback(() => {
     abortRef.current.aborted = true;
@@ -355,6 +402,21 @@ export default function TransferScreen() {
               </View>
             ) : (
               <View style={styles.block}>
+                <Pressable
+                  testID="record-video"
+                  onPress={recordVideo}
+                  disabled={running}
+                  style={({ pressed }) => [styles.recordBtn, pressed && styles.pressed]}
+                >
+                  <View style={styles.recordIcon}>
+                    <Icon name="video" size={22} color={colors.onBrandPrimary} />
+                  </View>
+                  <View style={styles.flex}>
+                    <Text style={styles.recordTitle}>Record Video</Text>
+                    <Text style={styles.recordSub}>Opens the camera · streams straight to USB</Text>
+                  </View>
+                  <Icon name="chevron-right" size={20} color={colors.onBrandPrimary} />
+                </Pressable>
                 <View style={styles.pickRow}>
                   <PickButton icon="image-multiple-outline" label="Photos / Videos" onPress={pickMedia} disabled={running} styles={styles} colors={colors} testID="pick-media" />
                   <PickButton icon="file-music-outline" label="Audio / Files" onPress={pickDoc} disabled={running} styles={styles} colors={colors} testID="pick-doc" />
@@ -527,6 +589,11 @@ const useStyles = makeStyles((colors) => ({
   pickRow: { flexDirection: "row", gap: spacing.md },
   pickBtn: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.xl, minHeight: 96 },
   pickLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontFamily: mono },
+
+  recordBtn: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md, minHeight: 60 },
+  recordIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+  recordTitle: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: "800", fontFamily: mono, letterSpacing: 0.5 },
+  recordSub: { color: colors.onBrandPrimary, fontSize: 11, fontFamily: mono, opacity: 0.85, marginTop: 2 },
 
   selected: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, padding: spacing.md },
   selectedName: { color: colors.onSurface, fontSize: 14, fontWeight: "600" },

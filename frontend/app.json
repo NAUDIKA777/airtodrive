@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.emergent.usbdirectflow.oa70xx",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Stream your photos and videos to USB",
+        "NSCameraUsageDescription": "Record video to stream to USB",
         "NSMicrophoneUsageDescription": "Record audio to stream to USB"
       }
     },
@@ -24,7 +25,9 @@
       "permissions": [
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -62,7 +65,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Stream your photos and videos to USB"
+          "photosPermission": "Stream your photos and videos to USB",
+          "cameraPermission": "Record video to stream to USB",
+          "microphonePermission": "Record audio to stream to USB"
         }
       ],
       "expo-document-picker",

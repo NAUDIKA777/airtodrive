@@ -110,7 +110,7 @@ function Scrubber({
           <Icon name={playing ? "pause" : "play"} size={30} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
-      <Text style={styles.scrubNote}>Scrub to any timestamp — only a small chunk is buffered from the drive.</Text>
+      <Text style={styles.scrubNote}>Scrubbed straight off the USB drive — the MP4 is never copied to the phone.</Text>
     </View>
   );
 }
@@ -118,7 +118,10 @@ function Scrubber({
 // ---------------------------------------------------------------------------
 function VideoPreview({ file }: { file: DriveFile }) {
   const styles = useStyles();
-  const player = useVideoPlayer(file.uri, (p) => {
+  // Stream straight from the mounted USB path (content:// / file://). useCaching
+  // stays false so expo-video/ExoPlayer reads the drive directly and never copies
+  // the MP4 into the phone's local storage first.
+  const player = useVideoPlayer({ uri: file.uri, useCaching: false }, (p) => {
     p.loop = false;
   });
   const [current, setCurrent] = useState(0);

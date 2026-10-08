@@ -127,3 +127,17 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
 
 ## Next Tasks
 - Gather feedback after first native Android build (real USB) test.
+
+## Recent Changes (camera record + direct USB playback)
+- Phone Media source now has a prominent **Record Video** button that opens the device camera
+  straight into record mode (`ImagePicker.launchCameraAsync({ mediaTypes: ["videos"] })`),
+  with camera/mic permission handling (request → Open Settings on permanent denial). The recorded
+  clip auto-streams to the connected USB drive via `doTransfer(item, "local")` — no gallery/picker step.
+  Gallery "Photos / Videos" and "Audio / Files" pickers are retained below it.
+- Video player (`app/preview/[id].tsx`) now plays from the mounted USB path directly:
+  `useVideoPlayer({ uri: file.uri, useCaching: false })` so ExoPlayer reads the content:// / file://
+  drive path and never copies the MP4 into phone local storage first.
+- app.json: added CAMERA + RECORD_AUDIO Android permissions, NSCameraUsageDescription (iOS),
+  and cameraPermission/microphonePermission on the expo-image-picker plugin.
+- NOTE: camera recording and USB content:// playback are native-only — require a dev/production
+  Android build to validate (not testable in Expo Go or web preview).
