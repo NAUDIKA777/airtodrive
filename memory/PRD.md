@@ -141,3 +141,27 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
   and cameraPermission/microphonePermission on the expo-image-picker plugin.
 - NOTE: camera recording and USB content:// playback are native-only — require a dev/production
   Android build to validate (not testable in Expo Go or web preview).
+
+## Recent Changes (VisionCamera recorder + media URL resolver)
+- Media controls on Transfer screen: three buttons — Photos (library), Files (doc picker),
+  Camera (navigates to the new /camera recorder route).
+- New camera recorder (`app/camera.tsx` -> `src/camera/VisionRecorder.native.tsx`) using
+  react-native-vision-camera@5.2.3 (+ react-native-nitro-modules, react-native-nitro-image):
+  - Glowing "Record to Drive" button — green on standby, pulsing red while recording.
+  - Manual controls: flip front/back, torch on/off, zoom slider, slow-motion toggle (120fps via
+    useCameraFormat). Also a photo shutter.
+  - Stop recording -> onRecordingFinished(path) -> runTransfer streams the clip to the USB drive
+    (writable stream opened + closed), temp capture deleted, record state reset.
+  - Web/Expo Go render an "Unavailable — needs native build" stub (VisionRecorder.web.tsx +
+    try/catch require guard), so the module never breaks the web/landing bundle.
+  - NOTE: vision-camera@5.2.3 ships NO Expo config plugin, so it is NOT listed in app.json
+    plugins (that crashed `expo start`). Camera/mic permissions are declared manually in app.json
+    (android.permissions CAMERA+RECORD_AUDIO; iOS NSCameraUsageDescription/NSMicrophoneUsageDescription).
+  - True system-wide OS overlay over OTHER apps was NOT built (needs a non-Expo native module and
+    can't route the stock camera's video to USB). Implemented the in-app glowing button instead (user choice 3a).
+- Backend media URL resolver `GET /api/resolve-media?url=...` (server.py): direct media links pass
+  through by extension; webpage (HTML) links are fetched (httpx) and scraped (og:video,
+  <video>/<source>, JSON media keys, bare .mp4/.webm/... URLs) so the app streams the REAL video
+  file, never raw HTML. Client (`api.ts` resolveMedia/looksDirectMedia) resolves internet URLs in
+  the Transfer `start()` before streaming. Verified via curl (direct + w3schools HTML page).
+- Camera features are native-only; require a published Android build (not Expo Go / web preview).

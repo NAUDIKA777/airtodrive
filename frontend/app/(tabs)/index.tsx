@@ -1,6 +1,7 @@
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
   Linking,
@@ -28,7 +29,7 @@ import {
   useDriveStatus,
   useDriveUsage,
 } from "@/src/hooks/useDrive";
-import { useSamples, type SampleSource } from "@/src/services/api";
+import { useSamples, resolveMedia, looksDirectMedia, type SampleSource } from "@/src/services/api";
 import { DRIVE_CAPACITY } from "@/src/services/drive";
 import {
   formatBytes,
@@ -69,6 +70,7 @@ export default function TransferScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const qc = useQueryClient();
+  const router = useRouter();
 
   const { data: drive } = useDriveStatus();
   const { data: usage } = useDriveUsage();
@@ -202,51 +204,35 @@ export default function TransferScreen() {
     [drive, compress, toast, qc],
   );
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     if (!pending) return;
-    doTransfer(pending, source);
-  }, [pending, source, doTransfer]);
-
-  // Launch the camera to capture a photo or live video, then stream it to USB.
-  const openCamera = useCallback(async () => {
-    try {
-      let perm = await ImagePicker.getCameraPermissionsAsync();
-      if (!perm.granted && perm.canAskAgain) {
-        perm = await ImagePicker.requestCameraPermissionsAsync();
-      }
-      if (!perm.granted) {
-        if (!perm.canAskAgain) {
-          toast.show("Enable camera access in Settings", "error");
-          Linking.openSettings().catch(() => {});
-        } else {
-          toast.show("Camera access is needed to capture", "info");
-        }
+    let item = pending;
+    // Internet links that aren't a direct media file get resolved server-side so
+    // we stream the real video, never a webpage's raw HTML source.
+    if (source === "internet" && pending.url && !looksDirectMedia(pending.url)) {
+      setRunning(true);
+      setProgress({
+        phase: "connecting",
+        bytesWritten: 0,
+        totalBytes: -1,
+        bytesPerSec: 0,
+        compressed: false,
+        message: "Resolving media URL\u2026",
+      });
+      try {
+        const r = await resolveMedia(pending.url);
+        item = { name: r.name, mimeType: r.mimeType, kind: r.kind, size: 0, url: r.url };
+        setPending(item);
+        if (r.resolved) toast.show(`Found ${r.name}`, "info");
+      } catch (e: any) {
+        setRunning(false);
+        setProgress(null);
+        toast.show(String(e?.message || "No video found on that page"), "error");
         return;
       }
-      const res = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["images", "videos"],
-        videoMaxDuration: 300,
-        quality: 1,
-      });
-      if (res.canceled || !res.assets?.length) return;
-      const a = res.assets[0];
-      const isVideo = a.type === "video" || (a.mimeType ?? "").startsWith("video") || a.duration != null;
-      const name = a.fileName ?? (isVideo ? `VID_${Date.now()}.mp4` : `IMG_${Date.now()}.jpg`);
-      const mime = a.mimeType ?? mimeFromName(name);
-      const item: PendingItem = {
-        name,
-        mimeType: mime,
-        kind: kindFromMime(mime, name),
-        size: a.fileSize ?? 0,
-        assetUri: a.uri,
-      };
-      setPending(item);
-      if (Platform.OS !== "web") Haptics.selectionAsync();
-      await doTransfer(item, "local");
-    } catch {
-      toast.show("Could not open the camera", "error");
     }
-  }, [toast, doTransfer]);
+    await doTransfer(item, source);
+  }, [pending, source, doTransfer, toast]);
 
   const cancel = useCallback(() => {
     abortRef.current.aborted = true;
@@ -407,7 +393,7 @@ export default function TransferScreen() {
                 <View style={styles.pickRow}>
                   <PickButton icon="image-multiple-outline" label="Photos" onPress={pickMedia} disabled={running} styles={styles} colors={colors} testID="pick-media" />
                   <PickButton icon="file-outline" label="Files" onPress={pickDoc} disabled={running} styles={styles} colors={colors} testID="pick-doc" />
-                  <PickButton icon="camera-outline" label="Camera" onPress={openCamera} disabled={running} styles={styles} colors={colors} testID="pick-camera" />
+                  <PickButton icon="camera-outline" label="Camera" onPress={() => router.push("/camera")} disabled={running} styles={styles} colors={colors} testID="pick-camera" />
                 </View>
               </View>
             )}

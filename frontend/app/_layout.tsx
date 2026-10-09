@@ -46,6 +46,7 @@ export default function RootLayout() {
                 >
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="preview/[id]" options={{ presentation: "card" }} />
+                  <Stack.Screen name="camera" options={{ presentation: "fullScreenModal" }} />
                 </Stack>
               </ToastProvider>
             </KeyboardProvider>
