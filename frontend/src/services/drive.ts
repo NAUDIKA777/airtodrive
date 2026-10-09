@@ -45,10 +45,18 @@ export const drive = {
       try {
         const { Directory } = require("expo-file-system");
         const dir = await Directory.pickDirectoryAsync();
-        info = { name: "USB DRIVE", uri: dir.uri as string, simulated: false };
-      } catch {
-        // User cancelled or SAF unavailable (e.g. Expo Go) — fall back to an
-        // internal virtual drive so the app never dead-ends.
+        const uri = dir.uri as string;
+        // SAF tree URIs for removable media look like
+        // content://com.android.externalstorage.documents/tree/XXXX-XXXX%3A...
+        // "primary%3A" means the user picked a folder on INTERNAL storage.
+        if (!uri.startsWith("content://") || uri.includes("/tree/primary%3A")) {
+          throw new Error("NOT_USB: pick a folder on the USB drive, not internal storage");
+        }
+        info = { name: "USB DRIVE", uri, simulated: false };
+      } catch (e: any) {
+        // Only dev builds / Expo Go may fall back to an internal virtual drive.
+        // In release builds we never silently write to internal storage.
+        if (!__DEV__) throw e;
         const uri = await getInternalVirtualDir();
         info = { name: "SIM-USB (internal)", uri, simulated: true };
       }

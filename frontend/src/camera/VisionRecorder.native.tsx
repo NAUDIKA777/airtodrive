@@ -151,7 +151,12 @@ function Recorder({ vc }: { vc: any }) {
         toast.show(`Saved ${name} to USB`, "success");
         qc.invalidateQueries({ queryKey: ["files"] });
         qc.invalidateQueries({ queryKey: ["drive-usage"] });
-        // Remove the camera's temp capture so nothing lingers in internal storage.
+      } catch (e: any) {
+        const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
+        if (!cancelled) toast.show("Could not stream capture to USB", "error");
+      } finally {
+        // ALWAYS remove the camera's temp capture — success, error or cancel —
+        // so a full-size video never lingers in internal storage.
         try {
           const { File } = require("expo-file-system");
           const tmp = new File(uri);
@@ -159,10 +164,6 @@ function Recorder({ vc }: { vc: any }) {
         } catch {
           // best-effort cleanup
         }
-      } catch (e: any) {
-        const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
-        if (!cancelled) toast.show("Could not stream capture to USB", "error");
-      } finally {
         setStreaming(false);
         setProgress(null);
       }

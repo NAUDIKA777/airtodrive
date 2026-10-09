@@ -436,6 +436,17 @@ export async function streamFileToDrive(opts: {
     } catch {
       // writer may already be torn down
     }
+    try {
+      await reader.cancel();
+    } catch {
+      // ignore
+    }
+    // Don't leave a truncated, unplayable file on the USB drive.
+    try {
+      if (dest.exists) dest.delete();
+    } catch {
+      // best-effort
+    }
     throw e;
   }
 
