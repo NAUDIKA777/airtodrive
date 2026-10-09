@@ -61,6 +61,14 @@ function uniqueName(dir: any, base: string): string {
   }
 }
 
+// Create a destination file inside the drive folder. SAF (content://) folders
+// need createFile(); joining a name onto a tree URI does not create a document.
+function newDriveFile(dir: any, name: string, mimeType: string | null): any {
+  if (String(dir.uri).startsWith("content://")) return dir.createFile(name, mimeType);
+  const { File } = require("expo-file-system");
+  return new File(dir, name);
+}
+
 async function finalize(
   partial: Omit<DriveFile, "id" | "createdAt">,
 ): Promise<DriveFile> {
@@ -170,7 +178,7 @@ async function nativeTransfer(input: TransferInput): Promise<DriveFile> {
   // directly into the USB file (no full copy on internal storage).
   if (!compressed && input.url) {
     const finalName = uniqueName(dir, name);
-    const dest = new File(dir, finalName);
+    const dest = newDriveFile(dir, finalName, mimeType);
     const start = now();
     const controller = new AbortController();
     if (signal) {
@@ -218,7 +226,7 @@ async function nativeTransfer(input: TransferInput): Promise<DriveFile> {
   if (!compressed && input.assetUri) {
     const finalName = uniqueName(dir, name);
     const src = new File(input.assetUri);
-    const dest = new File(dir, finalName);
+    const dest = newDriveFile(dir, finalName, mimeType);
     const total = input.size ?? safeSize(src) ?? -1;
     const reader = src.readableStream().getReader();
     const writer = dest.writableStream().getWriter();
@@ -404,7 +412,7 @@ export async function streamFileToDrive(opts: {
   const dir = new Directory(driveInfo.uri); // mounted USB (SAF) directory
   const finalName = uniqueName(dir, name);
   const src = new File(srcUri);
-  const dest = new File(dir, finalName); // destination ON the USB drive
+  const dest = newDriveFile(dir, finalName, mimeType); // destination ON the USB drive
   const total = safeSize(src) || -1;
 
   const reader = src.readableStream().getReader();
@@ -472,6 +480,63 @@ export async function streamFileToDrive(opts: {
     message: "Transfer complete",
   });
   return file;
+}
+
+// ---- Direct-to-USB recording -----------------------------------------------
+// The camera records straight into a document created on the USB drive (via the
+// patched VisionCamera recorder, which accepts content:// URIs), so a video is
+// never buffered in internal storage.
+
+export interface DriveTarget {
+  uri: string; // content:// document URI on the USB drive
+  name: string; // final file name on the drive
+}
+
+// True when captures can be written directly to the drive (a real SAF folder).
+export function canRecordDirect(driveInfo: DriveInfo): boolean {
+  return Platform.OS === "android" && !driveInfo.simulated && driveInfo.uri.startsWith("content://");
+}
+
+// Create an empty file on the USB drive for the camera to record into.
+export function createDriveFile(driveInfo: DriveInfo, name: string, mimeType: string): DriveTarget {
+  const { Directory } = require("expo-file-system");
+  const dir = new Directory(driveInfo.uri);
+  const finalName = uniqueName(dir, name);
+  const file = newDriveFile(dir, finalName, mimeType);
+  return { uri: file.uri as string, name: finalName };
+}
+
+// Remove a drive file that never got a usable recording.
+export function deleteDriveFile(uri: string): void {
+  try {
+    const { File } = require("expo-file-system");
+    const f = new File(uri);
+    if (f.exists) f.delete();
+  } catch {
+    // best-effort
+  }
+}
+
+// Add a finished direct recording to the drive index so Browse/Preview see it.
+export async function registerDriveFile(
+  target: DriveTarget,
+  mimeType: string,
+  driveInfo: DriveInfo,
+): Promise<DriveFile> {
+  const { File } = require("expo-file-system");
+  const size = safeSize(new File(target.uri));
+  return finalize({
+    name: target.name,
+    displayName: target.name,
+    size,
+    originalSize: size,
+    mimeType,
+    kind: kindFromMime(mimeType, target.name),
+    uri: target.uri,
+    compressed: false,
+    source: "local",
+    simulated: driveInfo.simulated,
+  });
 }
 
 // Read a decompressed text preview from a gzipped file on the drive.

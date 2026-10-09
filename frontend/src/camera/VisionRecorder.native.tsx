@@ -23,7 +23,15 @@ import { mono } from "@/src/fonts";
 import { useDriveStatus } from "@/src/hooks/useDrive";
 import type { DriveInfo } from "@/src/services/drive";
 import { formatBytes } from "@/src/services/media";
-import { streamFileToDrive, type Progress } from "@/src/services/transfer";
+import {
+  canRecordDirect,
+  createDriveFile,
+  deleteDriveFile,
+  registerDriveFile,
+  streamFileToDrive,
+  type DriveTarget,
+  type Progress,
+} from "@/src/services/transfer";
 import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 // Load VisionCamera defensively — it's a native module that is absent in Expo Go
@@ -41,7 +49,9 @@ export function VisionRecorder() {
 }
 
 function Recorder({ vc }: { vc: any }) {
-  const { Camera, useCameraDevice, useCameraPermission, useMicrophonePermission, useCameraFormat } = vc;
+  // VisionCamera v5 API: the Camera takes "outputs"; photos and videos are
+  // captured through those outputs instead of methods on a Camera ref.
+  const { Camera, useCameraDevice, useCameraPermission, useMicrophonePermission, useVideoOutput, usePhotoOutput } = vc;
   const styles = useStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -71,13 +81,15 @@ function Recorder({ vc }: { vc: any }) {
   const [streaming, setStreaming] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
 
-  const cameraRef = useRef<any>(null);
+  const recorderRef = useRef<any>(null); // active v5 Recorder
+  const targetRef = useRef<DriveTarget | null>(null); // USB file being recorded into
   const signalRef = useRef<{ aborted: boolean }>({ aborted: false });
 
   const device = useCameraDevice(position);
-  const targetFps = slowMo ? 120 : 30;
-  const format = useCameraFormat(device, [{ videoResolution: "max" }, { fps: targetFps }]);
-  const fps = format ? Math.min(targetFps, format.maxFps ?? targetFps) : targetFps;
+  const fps = slowMo && device?.supportsFPS?.(120) ? 120 : 30;
+
+  const videoOutput = useVideoOutput({ enableAudio: !!hasMic, fileType: "mp4" });
+  const photoOutput = usePhotoOutput({});
 
   useEffect(() => {
     if (!hasCam) reqCam();
@@ -86,7 +98,7 @@ function Recorder({ vc }: { vc: any }) {
   }, []);
 
   useEffect(() => {
-    if (device) setZoom(device.neutralZoom ?? 1);
+    if (device) setZoom(Math.min(Math.max(1, device.minZoom ?? 1), device.maxZoom ?? 1));
   }, [device]);
 
   // Pulsing glow while recording.
@@ -118,11 +130,10 @@ function Recorder({ vc }: { vc: any }) {
   useEffect(() => {
     return () => {
       signalRef.current.aborted = true;
-      try {
-        cameraRef.current?.stopRecording?.();
-      } catch {
-        // ignore
-      }
+      // Stop (not cancel) so the footage already on the drive is kept;
+      // the recorder's finish callback still indexes the file.
+      const rec = recorderRef.current;
+      if (rec?.isRecording) rec.stopRecording().catch(() => {});
       recordStore.reset();
     };
   }, []);
@@ -177,35 +188,66 @@ function Recorder({ vc }: { vc: any }) {
       return;
     }
     if (recording) {
-      // Stop: stopRecording() ends the camera's own video write stream and
-      // finalises the file. onRecordingFinished then streams it to USB, where the
-      // USB write stream is explicitly closed. Reset the glowing button now.
+      // Stop: CameraX finalises the MP4 (writes the moov atom) directly on the
+      // USB drive, then onRecordingFinished registers it. Reset the button now.
       try {
-        await cameraRef.current?.stopRecording();
+        await recorderRef.current?.stopRecording();
       } catch {
         // ignore
       }
       setRecording(false);
       return;
     }
+
+    const drive = driveRef.current;
+    if (!drive) return;
+    const direct = canRecordDirect(drive);
+    let target: DriveTarget | null = null;
     try {
-      cameraRef.current?.startRecording({
-        fileType: "mp4",
-        onRecordingFinished: (video: { path: string }) => {
+      if (direct) {
+        // Create the file on the USB drive first, then let CameraX write into it.
+        target = createDriveFile(drive, `REC_${Date.now()}.mp4`, "video/mp4");
+        targetRef.current = target;
+      }
+      // Dev / simulated drive: record to a temp file and copy it afterwards.
+      const recorder = await videoOutput.createRecorder(target ? { filePath: target.uri } : {});
+      recorderRef.current = recorder;
+
+      await recorder.startRecording(
+        (filePath: string) => {
           setRecording(false);
-          streamToDrive(video.path, `REC_${Date.now()}.mp4`, "video/mp4");
+          recorderRef.current = null;
+          if (target) {
+            const finished = target;
+            targetRef.current = null;
+            registerDriveFile(finished, "video/mp4", drive)
+              .then(() => {
+                toast.show(`Saved ${finished.name} to USB`, "success");
+                qc.invalidateQueries({ queryKey: ["files"] });
+                qc.invalidateQueries({ queryKey: ["drive-usage"] });
+              })
+              .catch(() => toast.show("Recorded, but could not index the file", "error"));
+          } else {
+            streamToDrive(filePath, `REC_${Date.now()}.mp4`, "video/mp4");
+          }
         },
-        onRecordingError: () => {
+        () => {
           setRecording(false);
+          recorderRef.current = null;
+          if (target) deleteDriveFile(target.uri);
+          targetRef.current = null;
           toast.show("Recording failed", "error");
         },
-      });
+      );
       setRecording(true);
       if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     } catch {
+      recorderRef.current = null;
+      if (target) deleteDriveFile(target.uri);
+      targetRef.current = null;
       toast.show("Could not start recording", "error");
     }
-  }, [recording, streamToDrive, toast]);
+  }, [recording, videoOutput, streamToDrive, toast, qc]);
 
   const takePhoto = useCallback(async () => {
     if (recording) return;
@@ -214,15 +256,16 @@ function Recorder({ vc }: { vc: any }) {
       return;
     }
     try {
-      const photo = await cameraRef.current?.takePhoto({ flash: torch ? "on" : "off" });
-      if (photo?.path) {
+      // Photos are small: capture to a temp file, then copy to the drive.
+      const photo = await photoOutput.capturePhotoToFile({ flashMode: torch ? "on" : "off" }, {});
+      if (photo?.filePath) {
         if (Platform.OS !== "web") Haptics.selectionAsync();
-        await streamToDrive(photo.path, `IMG_${Date.now()}.jpg`, "image/jpeg");
+        await streamToDrive(photo.filePath, `IMG_${Date.now()}.jpg`, "image/jpeg");
       }
     } catch {
       toast.show("Could not capture photo", "error");
     }
-  }, [recording, torch, streamToDrive, toast]);
+  }, [recording, torch, photoOutput, streamToDrive, toast]);
 
   // ---- permission / device gates ----
   if (!hasCam) {
@@ -250,20 +293,14 @@ function Recorder({ vc }: { vc: any }) {
   const busy = streaming;
 
   const cameraProps: any = {
-    ref: cameraRef,
     style: StyleSheet.absoluteFill,
     device,
     isActive: isFocused,
-    video: true,
-    audio: !!hasMic,
-    photo: true,
-    torch: torch ? "on" : "off",
+    outputs: [photoOutput, videoOutput],
+    constraints: [{ fps }],
+    torchMode: torch && device.hasTorch ? "on" : "off",
     zoom,
   };
-  if (format) {
-    cameraProps.format = format;
-    if (slowMo) cameraProps.fps = fps;
-  }
 
   return (
     <View style={styles.container}>
