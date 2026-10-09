@@ -8,6 +8,7 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 90     # fail instead of hanging for hours
     defaults:
       run:
         working-directory: frontend
@@ -23,6 +24,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: gradle/actions/setup-gradle@v4   # caches Gradle between runs
+
       - name: Install dependencies (also applies the VisionCamera patch)
         run: |
           corepack enable
@@ -33,7 +36,8 @@ jobs:
 
       - name: Build release APK
         working-directory: frontend/android
-        run: ./gradlew assembleRelease --no-daemon
+        # arm64 only: covers modern phones and cuts native C++ build time ~75%.
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
 
       - uses: actions/upload-artifact@v4
         with:
