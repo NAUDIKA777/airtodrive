@@ -165,3 +165,21 @@ uncompressed; enable on-the-fly decompression when reading from the drive.
   file, never raw HTML. Client (`api.ts` resolveMedia/looksDirectMedia) resolves internet URLs in
   the Transfer `start()` before streaming. Verified via curl (direct + w3schools HTML page).
 - Camera features are native-only; require a published Android build (not Expo Go / web preview).
+
+## Recent Changes (explicit stream teardown + cross-screen overlay)
+- transfer.ts `streamFileToDrive()`: writes a finished capture straight to the mounted USB SAF
+  directory (new File(new Directory(driveInfo.uri), name)) — external OTG path, not internal
+  storage — streaming in chunks and EXPLICITLY ending/closing the write stream (await writer.close),
+  with writer.abort() on cancel. Recorder now uses this (not runTransfer) with a signalRef.
+- Recorder stop flow: stopRecording() ends the camera's video write stream; onRecordingFinished
+  streams to USB where the USB write stream is explicitly closed; the glowing button resets
+  immediately (setRecording(false)). On unmount the signal aborts any in-flight write and the
+  camera stops, so nothing is left half-written. Camera temp capture is deleted after copy.
+- Cross-screen floating overlay: `src/camera/recordStore.ts` (useSyncExternalStore) +
+  `src/camera/RecordOverlay.native.tsx` mounted in app/_layout.tsx. A glowing FAB stays on every
+  screen (hidden on /camera): green idle (tap -> opens recorder), pulsing red while recording,
+  amber while a capture is still streaming to USB after navigating away. Web stub renders null.
+- Permissions: camera is gated/required (Grant + Open Settings fallback); microphone is requested
+  and the Camera `audio` prop = hasMic so denial degrades to video-only instead of crashing; USB
+  uses SAF (no runtime storage permission); android.permissions already has CAMERA/RECORD_AUDIO.
+- Verified: Android + web Metro bundles compile with 0 resolve errors.

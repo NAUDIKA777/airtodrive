@@ -11,6 +11,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { ToastProvider } from "@/src/components/toast";
+import { RecordOverlay } from "@/src/camera/RecordOverlay";
 import { queryClient } from "@/src/query-client";
 
 LogBox.ignoreAllLogs(true);
@@ -48,6 +49,7 @@ export default function RootLayout() {
                   <Stack.Screen name="preview/[id]" options={{ presentation: "card" }} />
                   <Stack.Screen name="camera" options={{ presentation: "fullScreenModal" }} />
                 </Stack>
+                <RecordOverlay />
               </ToastProvider>
             </KeyboardProvider>
           </QueryClientProvider>

@@ -370,6 +370,99 @@ export async function runTransfer(input: TransferInput): Promise<DriveFile> {
   }
 }
 
+// Stream a finished capture (camera temp file) straight onto the mounted USB
+// drive. The destination File lives in the SAF directory the user picked
+// (driveInfo.uri) — i.e. the external OTG storage path, never internal phone
+// storage. The write stream is explicitly ended/closed (writer.close) on
+// completion and aborted on cancel.
+export async function streamFileToDrive(opts: {
+  srcUri: string;
+  name: string;
+  mimeType: string;
+  driveInfo: DriveInfo;
+  onProgress?: (p: Progress) => void;
+  signal?: { aborted: boolean };
+}): Promise<DriveFile> {
+  const { srcUri, name, mimeType, driveInfo, onProgress, signal } = opts;
+  const kind = kindFromMime(mimeType, name);
+
+  // Web / virtual drive: reuse the simulated pipeline so the flow still completes.
+  if (Platform.OS === "web" || driveInfo.uri.startsWith("virtual://")) {
+    return runTransfer({
+      assetUri: srcUri,
+      name,
+      mimeType,
+      source: "local",
+      compress: false,
+      driveInfo,
+      onProgress: onProgress ?? (() => {}),
+      signal,
+    });
+  }
+
+  const { Directory, File } = require("expo-file-system");
+  const dir = new Directory(driveInfo.uri); // mounted USB (SAF) directory
+  const finalName = uniqueName(dir, name);
+  const src = new File(srcUri);
+  const dest = new File(dir, finalName); // destination ON the USB drive
+  const total = safeSize(src) || -1;
+
+  const reader = src.readableStream().getReader();
+  const writer = dest.writableStream().getWriter();
+  let written = 0;
+  const start = now();
+  try {
+    for (;;) {
+      if (signal?.aborted) throw new Error("cancelled");
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writer.write(value);
+      written += value.length;
+      const elapsed = Math.max(0.001, (now() - start) / 1000);
+      onProgress?.({
+        phase: "streaming",
+        bytesWritten: written,
+        totalBytes: total,
+        bytesPerSec: written / elapsed,
+        compressed: false,
+        message: "Streaming \u2192 USB",
+      });
+    }
+    // Explicitly end + close the USB file write stream.
+    await writer.close();
+  } catch (e) {
+    try {
+      await writer.abort();
+    } catch {
+      // writer may already be torn down
+    }
+    throw e;
+  }
+
+  const size = safeSize(dest) || written;
+  const file = await finalize({
+    name: finalName,
+    displayName: name,
+    size,
+    originalSize: size,
+    mimeType,
+    kind,
+    uri: dest.uri,
+    compressed: false,
+    source: "local",
+    simulated: driveInfo.simulated,
+  });
+  onProgress?.({
+    phase: "done",
+    bytesWritten: size,
+    totalBytes: size,
+    bytesPerSec: 0,
+    compressed: false,
+    message: "Transfer complete",
+  });
+  return file;
+}
+
 // Read a decompressed text preview from a gzipped file on the drive.
 export async function readTextPreview(file: DriveFile, maxChars = 4000): Promise<string> {
   try {

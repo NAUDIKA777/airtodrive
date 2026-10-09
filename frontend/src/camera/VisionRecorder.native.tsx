@@ -18,11 +18,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/src/components/icon";
 import { ProgressBar } from "@/src/components/progress-bar";
 import { useToast } from "@/src/components/toast";
+import { recordStore } from "@/src/camera/recordStore";
 import { mono } from "@/src/fonts";
 import { useDriveStatus } from "@/src/hooks/useDrive";
 import type { DriveInfo } from "@/src/services/drive";
 import { formatBytes } from "@/src/services/media";
-import { runTransfer, type Progress } from "@/src/services/transfer";
+import { streamFileToDrive, type Progress } from "@/src/services/transfer";
 import { makeStyles, radius, spacing, useTheme } from "@/src/theme";
 
 // Load VisionCamera defensively — it's a native module that is absent in Expo Go
@@ -71,6 +72,7 @@ function Recorder({ vc }: { vc: any }) {
   const [progress, setProgress] = useState<Progress | null>(null);
 
   const cameraRef = useRef<any>(null);
+  const signalRef = useRef<{ aborted: boolean }>({ aborted: false });
 
   const device = useCameraDevice(position);
   const targetFps = slowMo ? 120 : 30;
@@ -103,6 +105,28 @@ function Recorder({ vc }: { vc: any }) {
     pulse.setValue(0);
   }, [recording, pulse]);
 
+  // Mirror state into the global store so the cross-screen overlay reflects it.
+  useEffect(() => {
+    recordStore.setRecording(recording);
+  }, [recording]);
+  useEffect(() => {
+    recordStore.setStreaming(streaming);
+  }, [streaming]);
+
+  // Leaving the recorder: stop any live recording and abort the USB write stream
+  // so nothing is left half-written, then clear the global overlay state.
+  useEffect(() => {
+    return () => {
+      signalRef.current.aborted = true;
+      try {
+        cameraRef.current?.stopRecording?.();
+      } catch {
+        // ignore
+      }
+      recordStore.reset();
+    };
+  }, []);
+
   const streamToDrive = useCallback(
     async (path: string, name: string, mimeType: string) => {
       const drive = driveRef.current;
@@ -111,20 +135,20 @@ function Recorder({ vc }: { vc: any }) {
         return;
       }
       const uri = path.startsWith("file://") ? path : `file://${path}`;
+      signalRef.current = { aborted: false };
       setStreaming(true);
       try {
-        // runTransfer opens a writable stream to the USB path and closes it when
-        // done — i.e. the write stream is ended/closed here, not left dangling.
-        await runTransfer({
-          assetUri: uri,
+        // Writes straight onto the mounted USB (SAF) path and explicitly closes
+        // the write stream when done.
+        await streamFileToDrive({
+          srcUri: uri,
           name,
           mimeType,
-          source: "local",
-          compress: false,
           driveInfo: drive,
           onProgress: setProgress,
+          signal: signalRef.current,
         });
-        toast.show(`Streamed ${name} to USB`, "success");
+        toast.show(`Saved ${name} to USB`, "success");
         qc.invalidateQueries({ queryKey: ["files"] });
         qc.invalidateQueries({ queryKey: ["drive-usage"] });
         // Remove the camera's temp capture so nothing lingers in internal storage.
@@ -135,8 +159,9 @@ function Recorder({ vc }: { vc: any }) {
         } catch {
           // best-effort cleanup
         }
-      } catch {
-        toast.show("Could not stream capture to USB", "error");
+      } catch (e: any) {
+        const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
+        if (!cancelled) toast.show("Could not stream capture to USB", "error");
       } finally {
         setStreaming(false);
         setProgress(null);
@@ -151,8 +176,9 @@ function Recorder({ vc }: { vc: any }) {
       return;
     }
     if (recording) {
-      // Stopping ends recording -> onRecordingFinished fires -> stream closes ->
-      // record state resets below and in the callback.
+      // Stop: stopRecording() ends the camera's own video write stream and
+      // finalises the file. onRecordingFinished then streams it to USB, where the
+      // USB write stream is explicitly closed. Reset the glowing button now.
       try {
         await cameraRef.current?.stopRecording();
       } catch {
@@ -228,7 +254,7 @@ function Recorder({ vc }: { vc: any }) {
     device,
     isActive: isFocused,
     video: true,
-    audio: true,
+    audio: !!hasMic,
     photo: true,
     torch: torch ? "on" : "off",
     zoom,
