@@ -18,10 +18,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/src/components/icon";
 import { ProgressBar } from "@/src/components/progress-bar";
 import { useToast } from "@/src/components/toast";
-import { recordStore } from "@/src/camera/recordStore";
+import { RECORD_COLORS, recordStore } from "@/src/camera/recordStore";
 import { mono } from "@/src/fonts";
 import { useDriveStatus } from "@/src/hooks/useDrive";
 import type { DriveInfo } from "@/src/services/drive";
+import { driveEvents } from "@/src/services/driveEvents";
 import { formatBytes } from "@/src/services/media";
 import {
   canRecordDirect,
@@ -138,6 +139,23 @@ function Recorder({ vc }: { vc: any }) {
     };
   }, []);
 
+  // USB drive unplugged: halt immediately. Cancel (not stop) the recording —
+  // CameraX can't finalize an MP4 on a drive that is gone — and abort any
+  // stream that is still writing.
+  useEffect(() => {
+    return driveEvents.onLost(() => {
+      signalRef.current.aborted = true;
+      const rec = recorderRef.current;
+      recorderRef.current = null;
+      targetRef.current = null;
+      if (rec?.isRecording) rec.cancelRecording().catch(() => {});
+      setRecording(false);
+      setStreaming(false);
+      setProgress(null);
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    });
+  }, []);
+
   const streamToDrive = useCallback(
     async (path: string, name: string, mimeType: string) => {
       const drive = driveRef.current;
@@ -164,7 +182,7 @@ function Recorder({ vc }: { vc: any }) {
         qc.invalidateQueries({ queryKey: ["drive-usage"] });
       } catch (e: any) {
         const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
-        if (!cancelled) toast.show("Could not stream capture to USB", "error");
+        if (!cancelled && !driveEvents.isLost()) toast.show("Could not stream capture to USB", "error");
       } finally {
         // ALWAYS remove the camera's temp capture — success, error or cancel —
         // so a full-size video never lingers in internal storage.
@@ -206,7 +224,7 @@ function Recorder({ vc }: { vc: any }) {
     try {
       if (direct) {
         // Create the file on the USB drive first, then let CameraX write into it.
-        target = createDriveFile(drive, `REC_${Date.now()}.mp4`, "video/mp4");
+        target = await createDriveFile(drive, `REC_${Date.now()}.mp4`, "video/mp4");
         targetRef.current = target;
       }
       // Dev / simulated drive: record to a temp file and copy it afterwards.
@@ -287,7 +305,9 @@ function Recorder({ vc }: { vc: any }) {
     return <Unavailable reason="no-device" onBack={() => router.back()} />;
   }
 
-  const haloColor = recording ? colors.error : colors.brandSecondary;
+  // Green while stopped, red while recording.
+  const recordColor = recording ? RECORD_COLORS.recording : RECORD_COLORS.idle;
+  const haloColor = recordColor;
   const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] });
   const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
   const busy = streaming;
@@ -425,8 +445,8 @@ function Recorder({ vc }: { vc: any }) {
               style={[
                 styles.recordBtn,
                 {
-                  borderColor: recording ? colors.error : colors.brandSecondary,
-                  shadowColor: recording ? colors.error : colors.brandSecondary,
+                  borderColor: recordColor,
+                  shadowColor: recordColor,
                 },
                 busy && styles.recordDisabled,
               ]}
@@ -434,7 +454,7 @@ function Recorder({ vc }: { vc: any }) {
               <View
                 style={[
                   recording ? styles.recInnerStop : styles.recInnerIdle,
-                  { backgroundColor: recording ? colors.error : colors.brandSecondary },
+                  { backgroundColor: recordColor },
                 ]}
               />
             </Pressable>

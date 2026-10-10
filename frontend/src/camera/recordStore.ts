@@ -1,5 +1,11 @@
 import { useSyncExternalStore } from "react";
 
+// Record button colors: green = stopped / ready, red = recording.
+export const RECORD_COLORS = {
+  idle: "#22C55E",
+  recording: "#EF4444",
+} as const;
+
 // Tiny global store so the floating record overlay can reflect the recorder's
 // state from ANY screen (recording in progress, or a capture still streaming to
 // the USB drive after the user navigated away).

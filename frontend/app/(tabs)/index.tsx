@@ -40,6 +40,7 @@ import {
   type FileKind,
   type TransferSource,
 } from "@/src/services/media";
+import { driveEvents } from "@/src/services/driveEvents";
 import { runTransfer, type Progress } from "@/src/services/transfer";
 import { makeStyles, radius, spacing } from "@/src/theme";
 import { useTheme } from "@/src/theme";
@@ -94,8 +95,10 @@ export default function TransferScreen() {
     try {
       const info = await connect.mutateAsync();
       toast.show(info.simulated ? "Simulated drive connected" : "USB drive connected", "success");
-    } catch {
-      toast.show("Could not connect drive", "error");
+    } catch (e: any) {
+      if (e?.code === "ERR_PICKER_CANCELLED") return;
+      // Native errors explain what to do, e.g. "Open the top level of the USB drive…"
+      toast.show(e?.code ? String(e.message) : "Could not connect drive", "error");
     }
   }, [connect, toast]);
 
@@ -195,6 +198,7 @@ export default function TransferScreen() {
         setPending(null);
         setUrl("");
       } catch (e: any) {
+        if (driveEvents.isLost()) return; // the drive watcher already told the user
         const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
         toast.show(cancelled ? "Transfer cancelled" : "Transfer failed", cancelled ? "info" : "error");
       } finally {
