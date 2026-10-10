@@ -12,6 +12,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { ToastProvider } from "@/src/components/toast";
 import { RecordOverlay } from "@/src/camera/RecordOverlay";
+import { DriveWatcher } from "@/src/hooks/useDriveWatcher";
 import { queryClient } from "@/src/query-client";
 
 LogBox.ignoreAllLogs(true);
@@ -39,6 +40,7 @@ export default function RootLayout() {
             <KeyboardProvider>
               <ToastProvider>
                 <StatusBar style="light" />
+                <DriveWatcher />
                 <Stack
                   screenOptions={{
                     headerShown: false,

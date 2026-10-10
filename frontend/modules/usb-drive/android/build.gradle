@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.airtodrive'
+version = '1.0.0'
+
+android {
+  namespace "com.airtodrive.usbdrive"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  implementation "androidx.documentfile:documentfile:1.1.0"
+  implementation "androidx.core:core-ktx:1.13.1"
+}

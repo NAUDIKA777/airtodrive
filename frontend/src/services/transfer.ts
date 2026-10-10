@@ -1,7 +1,9 @@
 import { Platform } from "react-native";
 import pako from "pako";
 
+import { UsbDrive } from "@/modules/usb-drive";
 import { drive, type DriveInfo } from "@/src/services/drive";
+import { driveEvents } from "@/src/services/driveEvents";
 import {
   type DriveFile,
   type FileKind,
@@ -174,48 +176,19 @@ async function nativeTransfer(input: TransferInput): Promise<DriveFile> {
     message: "Opening stream\u2026",
   });
 
-  // Media / non-compressible from the internet: stream the response body
-  // directly into the USB file (no full copy on internal storage).
+  // Media / non-compressible from the internet: the native module streams the
+  // HTTP response body straight into a DocumentFile output stream on the USB
+  // drive. No temp file is created on internal storage.
   if (!compressed && input.url) {
-    const finalName = uniqueName(dir, name);
-    const dest = newDriveFile(dir, finalName, mimeType);
-    const start = now();
-    const controller = new AbortController();
-    if (signal) {
-      const poll = setInterval(() => {
-        if (signal.aborted) controller.abort();
-      }, 150);
-      // cleared on completion below via finally
-      (dest as any).__poll = poll;
-    }
-    try {
-      await File.downloadFileAsync(input.url, dest, {
-        idempotent: true,
-        signal: controller.signal,
-        onProgress: ({ bytesWritten, totalBytes }: { bytesWritten: number; totalBytes: number }) => {
-          const elapsed = Math.max(0.001, (now() - start) / 1000);
-          onProgress({
-            phase: "streaming",
-            bytesWritten,
-            totalBytes,
-            bytesPerSec: bytesWritten / elapsed,
-            compressed: false,
-            message: "Streaming \u2192 USB",
-          });
-        },
-      });
-    } finally {
-      if ((dest as any).__poll) clearInterval((dest as any).__poll);
-    }
-    const size = safeSize(dest);
+    const result = await nativeDownload(input.url, name, mimeType, driveInfo, onProgress, signal);
     return finalize({
-      name: finalName,
+      name: result.name,
       displayName: name,
-      size,
-      originalSize: size,
+      size: result.size,
+      originalSize: result.size,
       mimeType,
       kind,
-      uri: dest.uri,
+      uri: result.uri,
       compressed: false,
       source,
       simulated: driveInfo.simulated,
@@ -322,6 +295,42 @@ async function nativeTransfer(input: TransferInput): Promise<DriveFile> {
   });
 }
 
+async function nativeDownload(
+  url: string,
+  name: string,
+  mimeType: string,
+  driveInfo: DriveInfo,
+  onProgress: (p: Progress) => void,
+  signal?: { aborted: boolean },
+): Promise<{ uri: string; name: string; size: number }> {
+  const native = UsbDrive;
+  if (!native) throw new Error("USB drive support is missing from this build");
+  const id = uid();
+  const start = now();
+  const sub = native.addListener("onDownloadProgress", (e) => {
+    if (e.id !== id) return;
+    const elapsed = Math.max(0.001, (now() - start) / 1000);
+    onProgress({
+      phase: "streaming",
+      bytesWritten: e.bytesWritten,
+      totalBytes: e.totalBytes,
+      bytesPerSec: e.bytesWritten / elapsed,
+      compressed: false,
+      message: "Streaming \u2192 USB",
+    });
+  });
+  // Forward the JS cancel flag to the native download.
+  const poll = setInterval(() => {
+    if (signal?.aborted) native.cancelDownload(id);
+  }, 150);
+  try {
+    return await native.download({ id, url, treeUri: driveInfo.uri, name, mimeType });
+  } finally {
+    clearInterval(poll);
+    sub.remove();
+  }
+}
+
 function safeSize(file: any): number {
   try {
     return (file.size as number) ?? 0;
@@ -341,17 +350,26 @@ async function readAllBytes(input: TransferInput): Promise<Uint8Array> {
 }
 
 export async function runTransfer(input: TransferInput): Promise<DriveFile> {
+  // Unplugging the drive aborts the transfer immediately.
+  const signal = input.signal ?? { aborted: false };
+  input = { ...input, signal };
+  const offLost = driveEvents.onLost(() => {
+    signal.aborted = true;
+  });
   try {
     let file: DriveFile;
     if (Platform.OS === "web" || input.driveInfo.uri.startsWith("virtual://")) {
       file = await simulate(input);
+    } else if (!input.driveInfo.simulated) {
+      // Real USB drive: never fall back to a simulated "success".
+      file = await nativeTransfer(input);
     } else {
       try {
         file = await nativeTransfer(input);
       } catch (e: any) {
         if (String(e?.message || e).toLowerCase().includes("cancel")) throw e;
-        // Native FS failed (e.g. Expo Go without SAF) — fall back to simulation
-        // so the flow still completes end-to-end.
+        // Dev virtual drive without native FS (e.g. Expo Go) — simulate so the
+        // flow still completes end-to-end.
         file = await simulate(input);
       }
     }
@@ -365,6 +383,7 @@ export async function runTransfer(input: TransferInput): Promise<DriveFile> {
     });
     return file;
   } catch (e: any) {
+    if (driveEvents.isLost()) e = new Error("USB drive disconnected");
     const cancelled = String(e?.message || e).toLowerCase().includes("cancel");
     input.onProgress({
       phase: cancelled ? "cancelled" : "error",
@@ -375,6 +394,8 @@ export async function runTransfer(input: TransferInput): Promise<DriveFile> {
       message: cancelled ? "Transfer cancelled" : `Error: ${String(e?.message || e)}`,
     });
     throw e;
+  } finally {
+    offLost();
   }
 }
 
@@ -497,8 +518,9 @@ export function canRecordDirect(driveInfo: DriveInfo): boolean {
   return Platform.OS === "android" && !driveInfo.simulated && driveInfo.uri.startsWith("content://");
 }
 
-// Create an empty file on the USB drive for the camera to record into.
-export function createDriveFile(driveInfo: DriveInfo, name: string, mimeType: string): DriveTarget {
+// Create an empty DocumentFile on the USB drive for CameraX to record into.
+export async function createDriveFile(driveInfo: DriveInfo, name: string, mimeType: string): Promise<DriveTarget> {
+  if (UsbDrive) return UsbDrive.createFile(driveInfo.uri, name, mimeType);
   const { Directory } = require("expo-file-system");
   const dir = new Directory(driveInfo.uri);
   const finalName = uniqueName(dir, name);
@@ -508,6 +530,10 @@ export function createDriveFile(driveInfo: DriveInfo, name: string, mimeType: st
 
 // Remove a drive file that never got a usable recording.
 export function deleteDriveFile(uri: string): void {
+  if (UsbDrive) {
+    UsbDrive.deleteFile(uri).catch(() => {});
+    return;
+  }
   try {
     const { File } = require("expo-file-system");
     const f = new File(uri);
@@ -523,8 +549,13 @@ export async function registerDriveFile(
   mimeType: string,
   driveInfo: DriveInfo,
 ): Promise<DriveFile> {
-  const { File } = require("expo-file-system");
-  const size = safeSize(new File(target.uri));
+  let size = 0;
+  if (UsbDrive) {
+    size = await UsbDrive.fileSize(target.uri).catch(() => 0);
+  } else {
+    const { File } = require("expo-file-system");
+    size = safeSize(new File(target.uri));
+  }
   return finalize({
     name: target.name,
     displayName: target.name,

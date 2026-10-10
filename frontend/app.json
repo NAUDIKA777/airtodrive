@@ -49,6 +49,14 @@
       "description": "Download massive files directly to external USB drives — zero phone storage required."
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 28
+          }
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",

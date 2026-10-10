@@ -1,12 +1,15 @@
 import { Platform } from "react-native";
 
+import { UsbDrive } from "@/modules/usb-drive";
+import { driveEvents } from "@/src/services/driveEvents";
 import { storage } from "@/src/utils/storage";
 import type { DriveFile } from "@/src/services/media";
 
 export interface DriveInfo {
   name: string;
-  uri: string;
+  uri: string; // SAF tree URI of the USB drive root (content://...)
   simulated: boolean; // true = internal/virtual drive (preview / fallback)
+  volumeId?: string; // Android storage volume id, e.g. "1A2B-3C4D"
 }
 
 const DRIVE_KEY = "usb_drive";
@@ -41,33 +44,55 @@ export const drive = {
     let info: DriveInfo;
     if (isWeb()) {
       info = { name: "SIM-USB 32G", uri: "virtual://usb", simulated: true };
-    } else {
+    } else if (UsbDrive) {
+      // Android: SAF tree picker opened on the USB drive's root. The user taps
+      // "Use this folder"; the grant is persisted with takePersistableUriPermission.
+      // The native side rejects internal storage and sub-folders.
       try {
-        const { Directory } = require("expo-file-system");
-        const dir = await Directory.pickDirectoryAsync();
-        const uri = dir.uri as string;
-        // SAF tree URIs for removable media look like
-        // content://com.android.externalstorage.documents/tree/XXXX-XXXX%3A...
-        // "primary%3A" means the user picked a folder on INTERNAL storage.
-        if (!uri.startsWith("content://") || uri.includes("/tree/primary%3A")) {
-          throw new Error("NOT_USB: pick a folder on the USB drive, not internal storage");
-        }
-        info = { name: "USB DRIVE", uri, simulated: false };
+        const picked = await UsbDrive.pickDriveRoot();
+        info = { name: picked.name || "USB DRIVE", uri: picked.uri, simulated: false, volumeId: picked.volumeId };
       } catch (e: any) {
-        // Only dev builds / Expo Go may fall back to an internal virtual drive.
-        // In release builds we never silently write to internal storage.
-        if (!__DEV__) throw e;
-        const uri = await getInternalVirtualDir();
-        info = { name: "SIM-USB (internal)", uri, simulated: true };
+        if (!__DEV__ || e?.code !== "ERR_NO_DRIVE") throw e;
+        // Dev builds without a drive plugged in: internal virtual drive.
+        info = { name: "SIM-USB (internal)", uri: await getInternalVirtualDir(), simulated: true };
       }
+    } else {
+      // Expo Go / builds without the native module: development fallback only.
+      if (!__DEV__) throw new Error("USB drive support is missing from this build");
+      info = { name: "SIM-USB (internal)", uri: await getInternalVirtualDir(), simulated: true };
     }
     await storage.setItem(DRIVE_KEY, info as any);
+    driveEvents.reset();
     return info;
   },
 
   async disconnect(): Promise<void> {
+    const info = await this.getStatus();
+    if (info && !info.simulated && UsbDrive) {
+      try {
+        UsbDrive.releaseAccess(info.uri);
+      } catch {
+        // already released
+      }
+    }
     await storage.removeItem(DRIVE_KEY);
     await storage.setItem(INDEX_KEY, [] as any);
+  },
+
+  // The drive was unplugged: drop the active connection but keep the persisted
+  // grant and file index, so re-picking the same drive picks up where it left off.
+  async markDetached(): Promise<void> {
+    await storage.removeItem(DRIVE_KEY);
+  },
+
+  // True while the saved drive is still plugged in and writable by this app.
+  async isAvailable(info: DriveInfo): Promise<boolean> {
+    if (info.simulated || !UsbDrive) return true;
+    try {
+      return UsbDrive.hasAccess(info.uri) && (await UsbDrive.isAttached(info.uri));
+    } catch {
+      return false;
+    }
   },
 
   async listFiles(): Promise<DriveFile[]> {
@@ -90,9 +115,13 @@ export const drive = {
     const target = list.find((f) => f.id === id);
     if (target && !target.simulated && !isWeb()) {
       try {
-        const { File } = require("expo-file-system");
-        const f = new File(target.uri);
-        if (f.exists) f.delete();
+        if (UsbDrive) {
+          await UsbDrive.deleteFile(target.uri);
+        } else {
+          const { File } = require("expo-file-system");
+          const f = new File(target.uri);
+          if (f.exists) f.delete();
+        }
       } catch {
         // ignore physical-delete failures; still remove from index
       }

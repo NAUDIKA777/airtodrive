@@ -4,9 +4,8 @@ import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from "r
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Icon } from "@/src/components/icon";
-import { useRecordState } from "@/src/camera/recordStore";
+import { RECORD_COLORS, useRecordState } from "@/src/camera/recordStore";
 import { mono } from "@/src/fonts";
-import { useTheme } from "@/src/theme";
 
 // A glowing record control that floats above every screen so recording /
 // USB-streaming stays reachable and visible as the user moves around the app.
@@ -15,7 +14,6 @@ export function RecordOverlay() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
   const { recording, streaming } = useRecordState();
 
   const pulse = useRef(new Animated.Value(0)).current;
@@ -38,8 +36,9 @@ export function RecordOverlay() {
   if (Platform.OS === "web") return null;
   if (pathname === "/camera") return null; // recorder screen owns the control there
 
-  const color = recording ? colors.error : streaming ? colors.warning : colors.brandSecondary;
-  const label = recording ? "REC" : streaming ? "USB" : "REC";
+  // Floating camera button: green while stopped, red while recording.
+  const color = recording ? RECORD_COLORS.recording : RECORD_COLORS.idle;
+  const label = recording ? "REC" : streaming ? "USB" : "CAM";
   const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
   const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
 
@@ -52,13 +51,15 @@ export function RecordOverlay() {
         />
         <Pressable
           testID="record-overlay"
+          accessibilityRole="button"
+          accessibilityLabel={recording ? "Recording to USB drive, open camera" : "Open camera"}
           onPress={() => router.push("/camera")}
           style={[styles.btn, { borderColor: color, shadowColor: color }]}
         >
           {streaming && !recording ? (
             <Icon name="usb-flash-drive" size={22} color={color} />
           ) : (
-            <View style={[styles.dot, { backgroundColor: color }]} />
+            <Icon name={recording ? "record-rec" : "video"} size={22} color={color} />
           )}
           <Text style={[styles.label, { color }]}>{label}</Text>
         </Pressable>
@@ -85,6 +86,5 @@ const styles = StyleSheet.create({
     elevation: 12,
     gap: 1,
   },
-  dot: { width: 16, height: 16, borderRadius: 8 },
   label: { fontSize: 8, fontFamily: mono, fontWeight: "800", letterSpacing: 0.5 },
 });
