@@ -12,6 +12,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { ToastProvider } from "@/src/components/toast";
 import { RecordOverlay } from "@/src/camera/RecordOverlay";
+import { useDriveWatcher } from "@/src/hooks/useDrive";
 import { queryClient } from "@/src/query-client";
 
 LogBox.ignoreAllLogs(true);
@@ -49,6 +50,7 @@ export default function RootLayout() {
                   <Stack.Screen name="preview/[id]" options={{ presentation: "card" }} />
                   <Stack.Screen name="camera" options={{ presentation: "fullScreenModal" }} />
                 </Stack>
+                <DriveWatcher />
                 <RecordOverlay />
               </ToastProvider>
             </KeyboardProvider>
@@ -57,4 +59,10 @@ export default function RootLayout() {
       </GestureHandlerRootView>
     </ErrorBoundary>
   );
+}
+
+// Lives inside QueryClientProvider so it can refresh the drive query.
+function DriveWatcher() {
+  useDriveWatcher();
+  return null;
 }

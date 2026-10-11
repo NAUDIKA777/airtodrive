@@ -30,7 +30,7 @@ import {
   useDriveUsage,
 } from "@/src/hooks/useDrive";
 import { useSamples, resolveMedia, looksDirectMedia, type SampleSource } from "@/src/services/api";
-import { DRIVE_CAPACITY } from "@/src/services/drive";
+import { DRIVE_CAPACITY, connectErrorMessage, driveStatusLabel, isDriveReady } from "@/src/services/drive";
 import {
   formatBytes,
   formatSpeed,
@@ -88,14 +88,16 @@ export default function TransferScreen() {
   const abortRef = useRef<{ aborted: boolean }>({ aborted: false });
 
   const connected = !!drive;
+  const ready = isDriveReady(drive);
 
   const handleConnect = useCallback(async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       const info = await connect.mutateAsync();
       toast.show(info.simulated ? "Simulated drive connected" : "USB drive connected", "success");
-    } catch {
-      toast.show("Could not connect drive", "error");
+    } catch (e) {
+      const msg = connectErrorMessage(e);
+      if (msg) toast.show(msg, "error");
     }
   }, [connect, toast]);
 
@@ -238,7 +240,7 @@ export default function TransferScreen() {
     abortRef.current.aborted = true;
   }, []);
 
-  const canStart = connected && !running && !!pending;
+  const canStart = ready && !running && !!pending;
   const pct =
     progress && progress.totalBytes > 0
       ? Math.min(1, progress.bytesWritten / progress.totalBytes)
@@ -287,12 +289,27 @@ export default function TransferScreen() {
                     <View style={styles.simBadge}>
                       <Text style={styles.simBadgeText}>SIM</Text>
                     </View>
+                  ) : !ready ? (
+                    <Pressable
+                      testID="drive-reconnect"
+                      onPress={handleConnect}
+                      disabled={connect.isPending}
+                      hitSlop={8}
+                      style={[styles.simBadge, styles.warnBadge]}
+                    >
+                      <Text style={[styles.simBadgeText, styles.warnBadgeText]}>
+                        {connect.isPending ? "…" : "RECONNECT"}
+                      </Text>
+                    </Pressable>
                   ) : (
                     <View style={[styles.simBadge, styles.liveBadge]}>
                       <Text style={[styles.simBadgeText, styles.liveBadgeText]}>LIVE</Text>
                     </View>
                   )}
                 </View>
+                {!ready ? (
+                  <Text style={[styles.driveMeta, { color: colors.warning }]}>{driveStatusLabel(drive)}</Text>
+                ) : null}
                 <Text style={styles.driveMeta}>
                   {formatBytes(usage?.used ?? 0)} used · {usage?.count ?? files?.length ?? 0} files
                 </Text>
@@ -540,6 +557,8 @@ const useStyles = makeStyles((colors) => ({
   simBadgeText: { color: colors.warning, fontSize: 10, fontFamily: mono, fontWeight: "700" },
   liveBadge: { backgroundColor: "rgba(16,185,129,0.18)" },
   liveBadgeText: { color: colors.brandSecondary },
+  warnBadge: { backgroundColor: "rgba(245,158,11,0.18)" },
+  warnBadgeText: { color: colors.warning },
   capacity: { color: colors.muted, fontSize: 11, fontFamily: mono },
 
   connectCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.xl, alignItems: "center", gap: spacing.md },

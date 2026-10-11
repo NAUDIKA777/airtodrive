@@ -15,13 +15,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { UsbDrive } from "@/modules/usb-drive";
 import { Icon } from "@/src/components/icon";
 import { ProgressBar } from "@/src/components/progress-bar";
 import { useToast } from "@/src/components/toast";
 import { recordStore } from "@/src/camera/recordStore";
 import { mono } from "@/src/fonts";
-import { useDriveStatus } from "@/src/hooks/useDrive";
-import type { DriveInfo } from "@/src/services/drive";
+import { useConnectDrive, useDriveStatus } from "@/src/hooks/useDrive";
+import { connectErrorMessage, driveStatusLabel, isDriveReady, type DriveInfo } from "@/src/services/drive";
 import { formatBytes } from "@/src/services/media";
 import {
   canRecordDirect,
@@ -69,6 +70,8 @@ function Recorder({ vc }: { vc: any }) {
   const { data: driveInfo } = useDriveStatus();
   const driveRef = useRef<DriveInfo | null | undefined>(driveInfo);
   driveRef.current = driveInfo;
+  const driveReady = isDriveReady(driveInfo);
+  const connect = useConnectDrive();
 
   const { hasPermission: hasCam, requestPermission: reqCam } = useCameraPermission();
   const { hasPermission: hasMic, requestPermission: reqMic } = useMicrophonePermission();
@@ -141,8 +144,8 @@ function Recorder({ vc }: { vc: any }) {
   const streamToDrive = useCallback(
     async (path: string, name: string, mimeType: string) => {
       const drive = driveRef.current;
-      if (!drive) {
-        toast.show("Connect a USB drive first", "error");
+      if (!isDriveReady(drive)) {
+        toast.show(NOT_READY_MSG, "error");
         return;
       }
       const uri = path.startsWith("file://") ? path : `file://${path}`;
@@ -182,9 +185,21 @@ function Recorder({ vc }: { vc: any }) {
     [toast, qc],
   );
 
+  // Tapping the top status bar (re)connects the USB drive via the SAF picker.
+  const onConnectDrive = useCallback(async () => {
+    if (recording || connect.isPending) return;
+    try {
+      const info = await connect.mutateAsync();
+      toast.show(`Connected to ${info.name}`, "success");
+    } catch (e) {
+      const msg = connectErrorMessage(e);
+      if (msg) toast.show(msg, "error");
+    }
+  }, [recording, connect, toast]);
+
   const onToggleRecord = useCallback(async () => {
-    if (!driveRef.current) {
-      toast.show("Connect a USB drive first", "error");
+    if (!recording && !isDriveReady(driveRef.current)) {
+      toast.show(NOT_READY_MSG, "error");
       return;
     }
     if (recording) {
@@ -200,8 +215,18 @@ function Recorder({ vc }: { vc: any }) {
     }
 
     const drive = driveRef.current;
-    if (!drive) return;
+    if (!isDriveReady(drive)) return;
     const direct = canRecordDirect(drive);
+    if (direct) {
+      // Last-second check: the drive may have been unplugged since the status
+      // query ran. Catch it here instead of failing inside CameraX.
+      const access = UsbDrive.checkAccess(drive.uri);
+      if (access && access.status !== "ok") {
+        qc.invalidateQueries({ queryKey: ["drive"] });
+        toast.show(NOT_READY_MSG, "error");
+        return;
+      }
+    }
     let target: DriveTarget | null = null;
     try {
       if (direct) {
@@ -251,8 +276,8 @@ function Recorder({ vc }: { vc: any }) {
 
   const takePhoto = useCallback(async () => {
     if (recording) return;
-    if (!driveRef.current) {
-      toast.show("Connect a USB drive first", "error");
+    if (!isDriveReady(driveRef.current)) {
+      toast.show(NOT_READY_MSG, "error");
       return;
     }
     try {
@@ -311,16 +336,22 @@ function Recorder({ vc }: { vc: any }) {
         <Pressable testID="camera-back" onPress={() => router.back()} hitSlop={10} style={styles.iconBtn}>
           <Icon name="chevron-left" size={28} color="#FFFFFF" />
         </Pressable>
-        <View style={styles.driveTag}>
+        <Pressable
+          testID="camera-drive-status"
+          onPress={onConnectDrive}
+          disabled={recording || connect.isPending}
+          hitSlop={8}
+          style={({ pressed }) => [styles.driveTag, !driveReady && styles.driveTagWarn, pressed && { opacity: 0.7 }]}
+        >
           <Icon
-            name={driveInfo ? "usb-flash-drive" : "usb-port"}
+            name={driveReady ? "usb-flash-drive" : "usb-port"}
             size={14}
-            color={driveInfo ? colors.brandSecondary : colors.warning}
+            color={driveReady ? colors.brandSecondary : colors.warning}
           />
           <Text style={styles.driveTagText} numberOfLines={1}>
-            {driveInfo ? driveInfo.name : "No drive"}
+            {connect.isPending ? "Opening picker…" : driveStatusLabel(driveInfo)}
           </Text>
-        </View>
+        </Pressable>
         {recording ? (
           <View style={styles.recPill}>
             <View style={styles.recDot} />
@@ -449,6 +480,8 @@ function Recorder({ vc }: { vc: any }) {
   );
 }
 
+const NOT_READY_MSG = "USB drive not ready — tap the drive bar at the top to connect";
+
 function RailButton({
   icon,
   active,
@@ -572,13 +605,14 @@ const useStyles = makeStyles((colors) => ({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    maxWidth: 180,
+    maxWidth: 240,
     alignSelf: "center",
     backgroundColor: "rgba(0,0,0,0.4)",
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     borderRadius: radius.pill,
   },
+  driveTagWarn: { borderWidth: 1, borderColor: colors.warning },
   driveTagText: { color: "#FFFFFF", fontSize: 11, fontFamily: mono },
   recPill: {
     flexDirection: "row",
