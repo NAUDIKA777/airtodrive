@@ -83,6 +83,7 @@ function Recorder({ vc }: { vc: any }) {
   const [recording, setRecording] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [recStartedAt, setRecStartedAt] = useState<number | null>(null);
 
   const recorderRef = useRef<any>(null); // active v5 Recorder
   const targetRef = useRef<DriveTarget | null>(null); // USB file being recorded into
@@ -91,7 +92,11 @@ function Recorder({ vc }: { vc: any }) {
   const device = useCameraDevice(position);
   const fps = slowMo && device?.supportsFPS?.(120) ? 120 : 30;
 
-  const videoOutput = useVideoOutput({ enableAudio: !!hasMic, fileType: "mp4" });
+  // Fixed bitrate target: keeps the encoder from bursting when the camera moves
+  // (fast motion = many changed pixels = big data spikes) so the USB drive's
+  // write path never falls behind and drops/duplicates frames.
+  const targetBitRate = fps > 60 ? BITRATE_HIGH_FPS : BITRATE_STANDARD;
+  const videoOutput = useVideoOutput({ enableAudio: !!hasMic, fileType: "mp4", targetBitRate });
   const photoOutput = usePhotoOutput({});
 
   useEffect(() => {
@@ -265,6 +270,7 @@ function Recorder({ vc }: { vc: any }) {
         },
       );
       setRecording(true);
+      setRecStartedAt(Date.now());
       if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     } catch {
       recorderRef.current = null;
@@ -322,7 +328,9 @@ function Recorder({ vc }: { vc: any }) {
     device,
     isActive: isFocused,
     outputs: [photoOutput, videoOutput],
-    constraints: [{ fps }],
+    // Order = priority: frame rate first, then stabilization. "standard" falls
+    // back to off automatically on cameras (or fps modes) that can't stabilize.
+    constraints: [{ fps }, { videoStabilizationMode: "standard" }],
     torchMode: torch && device.hasTorch ? "on" : "off",
     zoom,
   };
@@ -440,44 +448,86 @@ function Recorder({ vc }: { vc: any }) {
             testID="camera-photo"
           />
 
-          {/* Glowing Record-to-Drive button */}
-          <View style={styles.recordWrap}>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.halo,
-                { backgroundColor: haloColor, transform: [{ scale: haloScale }], opacity: haloOpacity },
-              ]}
-            />
-            <Pressable
-              testID="record-to-drive"
-              onPress={onToggleRecord}
-              disabled={busy}
-              style={[
-                styles.recordBtn,
-                {
-                  borderColor: recording ? colors.error : colors.brandSecondary,
-                  shadowColor: recording ? colors.error : colors.brandSecondary,
-                },
-                busy && styles.recordDisabled,
-              ]}
-            >
-              <View
+          {/* Compact Record button: timer above, label below */}
+          <View style={styles.recordCol}>
+            <View style={[styles.timerPill, !recording && styles.timerHidden]} testID="record-timer">
+              <View style={styles.recDot} />
+              {recording && recStartedAt ? (
+                <RecordTimer startedAt={recStartedAt} style={styles.timerText} />
+              ) : (
+                <Text style={styles.timerText}>00:00</Text>
+              )}
+            </View>
+
+            <View style={styles.recordWrap}>
+              <Animated.View
+                pointerEvents="none"
                 style={[
-                  recording ? styles.recInnerStop : styles.recInnerIdle,
-                  { backgroundColor: recording ? colors.error : colors.brandSecondary },
+                  styles.halo,
+                  { backgroundColor: haloColor, transform: [{ scale: haloScale }], opacity: haloOpacity },
                 ]}
               />
-            </Pressable>
+              <Pressable
+                testID="record-to-drive"
+                accessibilityRole="button"
+                accessibilityLabel={recording ? "Stop recording" : "Record"}
+                onPress={onToggleRecord}
+                disabled={busy}
+                hitSlop={8}
+                style={[
+                  styles.recordBtn,
+                  {
+                    borderColor: recording ? colors.error : colors.brandSecondary,
+                    shadowColor: recording ? colors.error : colors.brandSecondary,
+                  },
+                  busy && styles.recordDisabled,
+                ]}
+              >
+                <View
+                  style={[
+                    recording ? styles.recInnerStop : styles.recInnerIdle,
+                    { backgroundColor: recording ? colors.error : colors.brandSecondary },
+                  ]}
+                />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.recordLabel, { color: recording ? colors.error : "#FFFFFF" }]}>
+              {recording ? "STOP" : "RECORD"}
+            </Text>
           </View>
 
           <View style={styles.railSpacer} />
         </View>
 
-        <Text style={styles.recordLabel}>{recording ? "Recording to Drive…" : "Record to Drive"}</Text>
       </View>
     </View>
   );
+}
+
+// ~10 Mbps for 1080p30 (≈1.25 MB/s) and ~20 Mbps for high-fps slow-mo: well
+// inside what even slow USB 2.0 sticks can sustain, with headroom for the
+// drive's write-latency spikes.
+const BITRATE_STANDARD = 10_000_000;
+const BITRATE_HIGH_FPS = 20_000_000;
+
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+}
+
+// Ticks on its own so the camera view doesn't re-render every second.
+function RecordTimer({ startedAt, style }: { startedAt: number; style: any }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, []);
+  return <Text style={style}>{formatElapsed(now - startedAt)}</Text>;
 }
 
 const NOT_READY_MSG = "USB drive not ready — tap the drive bar at the top to connect";
@@ -667,25 +717,37 @@ const useStyles = makeStyles((colors) => ({
   zoomSlider: { flex: 1, height: 36 },
 
   shutterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  recordWrap: { width: 96, height: 96, alignItems: "center", justifyContent: "center" },
-  halo: { position: "absolute", width: 96, height: 96, borderRadius: 48 },
+  recordCol: { alignItems: "center", gap: 6 },
+  timerPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 24,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(239,68,68,0.9)",
+  },
+  timerHidden: { opacity: 0 }, // keeps its space so the layout doesn't jump
+  timerText: { color: "#FFFFFF", fontSize: 13, fontFamily: mono, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  recordWrap: { width: 70, height: 70, alignItems: "center", justifyContent: "center" },
+  halo: { position: "absolute", width: 70, height: 70, borderRadius: 35 },
   recordBtn: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.3)",
-    borderWidth: 4,
+    borderWidth: 3,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.95,
-    shadowRadius: 16,
-    elevation: 16,
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 10,
   },
   recordDisabled: { opacity: 0.5 },
-  recInnerIdle: { width: 56, height: 56, borderRadius: 28 },
-  recInnerStop: { width: 32, height: 32, borderRadius: 8 },
-  recordLabel: { color: "#FFFFFF", fontSize: 13, fontFamily: mono, fontWeight: "700", textAlign: "center", letterSpacing: 0.5 },
+  recInnerIdle: { width: 40, height: 40, borderRadius: 20 },
+  recInnerStop: { width: 22, height: 22, borderRadius: 6 },
+  recordLabel: { fontSize: 12, fontFamily: mono, fontWeight: "800", textAlign: "center", letterSpacing: 1 },
 
   gate: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   gateBack: { width: 40, height: 40, alignItems: "center", justifyContent: "center", marginTop: spacing.sm },
