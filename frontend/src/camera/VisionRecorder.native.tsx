@@ -43,6 +43,15 @@ try {
   VC = null;
 }
 
+// Record button lifecycle. "starting" / "stopping" are transitional: taps are
+// ignored until CameraX confirms the recording started (Start event) or the
+// MP4 has been finalised on the drive (Finalize event).
+type RecPhase = "idle" | "starting" | "recording" | "stopping";
+
+// Safety net: if CameraX never reports Finalize after a stop, release the
+// button anyway so it can't get stuck in "Finalizing…".
+const STOP_TIMEOUT_MS = 8000;
+
 export function VisionRecorder() {
   if (!VC?.Camera) return <Unavailable reason="missing" />;
   return <Recorder vc={VC} />;
@@ -77,13 +86,40 @@ function Recorder({ vc }: { vc: any }) {
   const [torch, setTorch] = useState(false);
   const [slowMo, setSlowMo] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [recording, setRecording] = useState(false);
+  const [phase, setPhaseState] = useState<RecPhase>("idle");
   const [streaming, setStreaming] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
+
+  // The ref is the source of truth for the toggle (no stale closures, and it
+  // updates synchronously so a fast double-tap can't start two recorders).
+  const phaseRef = useRef<RecPhase>("idle");
+  const setPhase = useCallback((next: RecPhase) => {
+    phaseRef.current = next;
+    setPhaseState(next);
+  }, []);
+  // Camera is (still) writing video while recording or finalising.
+  const recording = phase === "recording" || phase === "stopping";
+  const transitioning = phase === "starting" || phase === "stopping";
 
   const recorderRef = useRef<any>(null); // active v5 Recorder
   const targetRef = useRef<DriveTarget | null>(null); // USB file being recorded into
   const signalRef = useRef<{ aborted: boolean }>({ aborted: false });
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Return the button to idle — but only for the recorder that is actually
+  // current, so a late callback from an old recorder can't clobber a new one.
+  const settleRecorder = useCallback(
+    (recorder: any) => {
+      if (recorderRef.current !== recorder) return;
+      if (stopTimerRef.current) {
+        clearTimeout(stopTimerRef.current);
+        stopTimerRef.current = null;
+      }
+      recorderRef.current = null;
+      setPhase("idle");
+    },
+    [setPhase],
+  );
 
   const device = useCameraDevice(position);
   const fps = slowMo && device?.supportsFPS?.(120) ? 120 : 30;
@@ -130,6 +166,7 @@ function Recorder({ vc }: { vc: any }) {
   useEffect(() => {
     return () => {
       signalRef.current.aborted = true;
+      if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
       // Stop (not cancel) so the footage already on the drive is kept;
       // the recorder's finish callback still indexes the file.
       const rec = recorderRef.current;
@@ -183,26 +220,43 @@ function Recorder({ vc }: { vc: any }) {
   );
 
   const onToggleRecord = useCallback(async () => {
-    if (!driveRef.current) {
-      toast.show("Connect a USB drive first", "error");
-      return;
-    }
-    if (recording) {
-      // Stop: CameraX finalises the MP4 (writes the moov atom) directly on the
-      // USB drive, then onRecordingFinished registers it. Reset the button now.
-      try {
-        await recorderRef.current?.stopRecording();
-      } catch {
-        // ignore
+    const current = phaseRef.current;
+    // Mid-transition: ignore taps until CameraX confirms start / finalise.
+    if (current === "starting" || current === "stopping") return;
+
+    if (current === "recording") {
+      // STOP. Never gated on drive status — a brief drive-status refetch must
+      // not make the stop button do nothing while the camera keeps writing.
+      const rec = recorderRef.current;
+      if (!rec) {
+        setPhase("idle");
+        return;
       }
-      setRecording(false);
+      setPhase("stopping");
+      stopTimerRef.current = setTimeout(() => settleRecorder(rec), STOP_TIMEOUT_MS);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      try {
+        // CameraX writes the moov atom onto the USB file, then fires Finalize:
+        // the native side closes the file descriptor and onRecordingFinished
+        // below indexes the file and returns the button to idle.
+        await rec.stopRecording();
+      } catch {
+        // "Not currently recording" — it already auto-finalised (max size /
+        // source inactive). Its finish callback settles; the timer is a backstop.
+      }
       return;
     }
 
+    // START
     const drive = driveRef.current;
-    if (!drive) return;
+    if (!drive) {
+      toast.show("Connect a USB drive first", "error");
+      return;
+    }
+    setPhase("starting");
     const direct = canRecordDirect(drive);
     let target: DriveTarget | null = null;
+    let recorder: any = null;
     try {
       if (direct) {
         // Create the file on the USB drive first, then let CameraX write into it.
@@ -210,13 +264,14 @@ function Recorder({ vc }: { vc: any }) {
         targetRef.current = target;
       }
       // Dev / simulated drive: record to a temp file and copy it afterwards.
-      const recorder = await videoOutput.createRecorder(target ? { filePath: target.uri } : {});
+      recorder = await videoOutput.createRecorder(target ? { filePath: target.uri } : {});
       recorderRef.current = recorder;
+      const thisRecorder = recorder;
 
+      // Resolves on CameraX's Start event (not when recording ends).
       await recorder.startRecording(
         (filePath: string) => {
-          setRecording(false);
-          recorderRef.current = null;
+          settleRecorder(thisRecorder);
           if (target) {
             const finished = target;
             targetRef.current = null;
@@ -232,25 +287,27 @@ function Recorder({ vc }: { vc: any }) {
           }
         },
         () => {
-          setRecording(false);
-          recorderRef.current = null;
+          settleRecorder(thisRecorder);
           if (target) deleteDriveFile(target.uri);
           targetRef.current = null;
           toast.show("Recording failed", "error");
         },
       );
-      setRecording(true);
-      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      if (phaseRef.current === "starting" && recorderRef.current === thisRecorder) {
+        setPhase("recording");
+        if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      }
     } catch {
-      recorderRef.current = null;
+      if (recorderRef.current === recorder) recorderRef.current = null;
       if (target) deleteDriveFile(target.uri);
       targetRef.current = null;
+      setPhase("idle");
       toast.show("Could not start recording", "error");
     }
-  }, [recording, videoOutput, streamToDrive, toast, qc]);
+  }, [videoOutput, streamToDrive, toast, qc, setPhase, settleRecorder]);
 
   const takePhoto = useCallback(async () => {
-    if (recording) return;
+    if (phaseRef.current !== "idle") return;
     if (!driveRef.current) {
       toast.show("Connect a USB drive first", "error");
       return;
@@ -265,7 +322,7 @@ function Recorder({ vc }: { vc: any }) {
     } catch {
       toast.show("Could not capture photo", "error");
     }
-  }, [recording, torch, photoOutput, streamToDrive, toast]);
+  }, [torch, photoOutput, streamToDrive, toast]);
 
   // ---- permission / device gates ----
   if (!hasCam) {
@@ -336,7 +393,7 @@ function Recorder({ vc }: { vc: any }) {
         <RailButton
           icon="camera-flip-outline"
           active={position === "front"}
-          disabled={recording}
+          disabled={phase !== "idle"}
           onPress={() => setPosition((p) => (p === "back" ? "front" : "back"))}
           styles={styles}
           colors={colors}
@@ -353,7 +410,7 @@ function Recorder({ vc }: { vc: any }) {
         <RailButton
           icon="motion-outline"
           active={slowMo}
-          disabled={recording}
+          disabled={phase !== "idle"}
           onPress={() => setSlowMo((s) => !s)}
           styles={styles}
           colors={colors}
@@ -402,7 +459,7 @@ function Recorder({ vc }: { vc: any }) {
         <View style={styles.shutterRow}>
           <RailButton
             icon="camera-outline"
-            disabled={recording || busy}
+            disabled={phase !== "idle" || busy}
             onPress={takePhoto}
             styles={styles}
             colors={colors}
@@ -421,14 +478,16 @@ function Recorder({ vc }: { vc: any }) {
             <Pressable
               testID="record-to-drive"
               onPress={onToggleRecord}
-              disabled={busy}
+              disabled={busy || transitioning}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy || transitioning, selected: recording }}
               style={[
                 styles.recordBtn,
                 {
                   borderColor: recording ? colors.error : colors.brandSecondary,
                   shadowColor: recording ? colors.error : colors.brandSecondary,
                 },
-                busy && styles.recordDisabled,
+                (busy || transitioning) && styles.recordDisabled,
               ]}
             >
               <View
@@ -443,7 +502,15 @@ function Recorder({ vc }: { vc: any }) {
           <View style={styles.railSpacer} />
         </View>
 
-        <Text style={styles.recordLabel}>{recording ? "Recording to Drive…" : "Record to Drive"}</Text>
+        <Text style={styles.recordLabel} testID="record-label">
+          {phase === "starting"
+            ? "Starting…"
+            : phase === "recording"
+              ? "Recording — tap to stop"
+              : phase === "stopping"
+                ? "Finalizing on Drive…"
+                : "Record to Drive"}
+        </Text>
       </View>
     </View>
   );

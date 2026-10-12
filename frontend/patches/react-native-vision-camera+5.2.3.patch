@@ -158,10 +158,10 @@ index c65d44f..5ef33f1 100644
    }
  }
 diff --git a/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/recording/HybridVideoRecorder.kt b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/recording/HybridVideoRecorder.kt
-index 78cc48c..3c40281 100644
+index 78cc48c..50b395c 100644
 --- a/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/recording/HybridVideoRecorder.kt
 +++ b/node_modules/react-native-vision-camera/android/src/main/java/com/margelo/nitro/camera/hybrids/recording/HybridVideoRecorder.kt
-@@ -10,11 +10,15 @@ import com.margelo.nitro.camera.extensions.parallel
+@@ -10,15 +10,23 @@ import com.margelo.nitro.camera.extensions.parallel
  import com.margelo.nitro.camera.utils.IdentifiableExecutor
  import com.margelo.nitro.core.Promise
  import com.margelo.nitro.core.resolve
@@ -179,7 +179,15 @@ index 78cc48c..3c40281 100644
  ) : HybridRecorderSpec() {
    private val executor = IdentifiableExecutor("com.margelo.nitro.recorder")
    private var recording: Recording? = null
-@@ -27,7 +31,7 @@ class HybridVideoRecorder(
+   private var isCancelled = false
++  // [air-to-drive] Set once start() is issued, until CameraX sends Finalize. While
++  // true the output is still being written (stopRecording() nulls `recording`
++  // before the moov atom is flushed), so dispose() must not release it.
++  @Volatile private var awaitingFinalize = false
+ 
+   override val isRecording: Boolean
+     get() = recording != null
+@@ -27,7 +35,7 @@ class HybridVideoRecorder(
    override var recordedFileSize: Double = 0.0
  
    override val filePath: String
@@ -188,10 +196,19 @@ index 78cc48c..3c40281 100644
  
    override fun startRecording(
      onRecordingFinished: (String, RecordingFinishedReason) -> Unit,
-@@ -66,10 +70,11 @@ class HybridVideoRecorder(
+@@ -52,6 +60,7 @@ class HybridVideoRecorder(
+       this.recordedFileSize = 0.0
+ 
+       // Start recording
++      this.awaitingFinalize = true
+       this.recording =
+         pendingRecording.start(executor) { event ->
+           when (event) {
+@@ -66,10 +75,12 @@ class HybridVideoRecorder(
                // flips to false even when the finalize was auto-triggered (e.g. by
                // reaching `maxDuration` / `maxFileSize`) instead of via `stopRecording()`.
                this.recording = null
++              this.awaitingFinalize = false
 +              onFinalized()
                if (isCancelled) {
                  // Recording was cancelled - delete the file and don't notify
@@ -201,7 +218,7 @@ index 78cc48c..3c40281 100644
                  return@start
                }
                val finishReason =
-@@ -84,7 +89,7 @@ class HybridVideoRecorder(
+@@ -84,7 +95,7 @@ class HybridVideoRecorder(
                  }
                if (finishReason != null) {
                  // Recording finished successfully - either no error, or file/duration limit reached:
@@ -210,12 +227,13 @@ index 78cc48c..3c40281 100644
                } else {
                  // We have an error, either during capture or even while starting:
                  val error = VideoRecorderError(event.error, event.cause)
-@@ -152,6 +157,10 @@ class HybridVideoRecorder(
+@@ -152,6 +163,11 @@ class HybridVideoRecorder(
  
    override fun dispose() {
      super.dispose()
-+    if (recording == null) {
-+      // Never started (or already finalized) - release the output now.
++    if (!awaitingFinalize) {
++      // Never started (or already finalized) - release the output now. Otherwise
++      // the pending Finalize event closes it after CameraX flushes the file.
 +      onFinalized()
 +    }
      recording?.close()
