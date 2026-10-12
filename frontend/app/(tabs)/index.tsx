@@ -21,6 +21,7 @@ import { ProgressBar } from "@/src/components/progress-bar";
 import { ScreenHeader } from "@/src/components/screen-header";
 import { SegmentedControl } from "@/src/components/segmented";
 import { useToast } from "@/src/components/toast";
+import { FacebookLiveCard } from "@/src/fblive/FacebookLiveCard";
 import { mono } from "@/src/fonts";
 import {
   useConnectDrive,
@@ -329,6 +330,9 @@ export default function TransferScreen() {
 
         {connected ? (
           <>
+            {/* Facebook Live screen recording -> USB */}
+            <FacebookLiveCard drive={drive!} />
+
             {/* Source toggle */}
             <Text style={styles.sectionLabel}>DATA SOURCE</Text>
             <SegmentedControl
