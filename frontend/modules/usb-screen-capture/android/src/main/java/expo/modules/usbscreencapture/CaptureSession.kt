@@ -229,24 +229,25 @@ internal class CaptureSession(
     // App audio is only confirmed once we've heard non-silent samples.
     if (!usingApp) onAudioSource(SOURCE_MIC)
 
-    val encoder: MediaCodec
-    try {
-      val format =
-        MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, SAMPLE_RATE, CHANNELS).apply {
-          setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-          setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BITRATE)
-          setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, READ_BYTES * 2)
+    val encoder: MediaCodec =
+      try {
+        val format =
+          MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, SAMPLE_RATE, CHANNELS).apply {
+            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BITRATE)
+            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, READ_BYTES * 2)
+          }
+        MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
+          configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+          start()
         }
-      encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-      encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-      encoder.start()
-    } catch (e: Exception) {
-      Log.w(TAG, "AAC encoder failed; recording video only", e)
-      record.release()
-      sink.dropExpectedTrack()
-      onAudioSource(SOURCE_NONE)
-      return
-    }
+      } catch (e: Exception) {
+        Log.w(TAG, "AAC encoder failed; recording video only", e)
+        record.release()
+        sink.dropExpectedTrack()
+        onAudioSource(SOURCE_NONE)
+        return
+      }
 
     val pcm = ByteArray(READ_BYTES)
     val info = MediaCodec.BufferInfo()
